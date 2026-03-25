@@ -1,6 +1,8 @@
 <script lang="ts">
-  import { onMount, tick } from "svelte";
+  import { onMount } from "svelte";
   import FileTree from "./FileTree.svelte";
+  import Sidebar from "./Sidebar.svelte";
+  import Terminal from "./Terminal.svelte";
   import type { WorkspaceState } from "../stores/workspaceStore.svelte";
   import { Electroview } from "electrobun/view";
 
@@ -23,39 +25,7 @@
   let runConfigOpen  = $state(false);
   let hamburgerOpen  = $state(false);
 
-  // ── File tree ────────────────────────────────────────────────
-  const fileTree = [
-    { name:"ultimate_editor", type:"folder" as const, key:"src", children:[
-      { name:"src", type:"folder" as const, key:"mainview", children:[
-        { name:"mainview", type:"folder" as const, key:"mw", children:[
-          { name:"pages", type:"folder" as const, key:"pages", children:[
-            { name:"index.svelte",    type:"file" as const, icon:"svelte", route:"/" },
-            { name:"triangle.svelte", type:"file" as const, icon:"svelte", route:"/triangle" },
-          ]},
-          { name:"components", type:"folder" as const, key:"components", children:[
-            { name:"EditorLayout.svelte", type:"file" as const, icon:"svelte", route:null },
-            { name:"FileTree.svelte",     type:"file" as const, icon:"svelte", route:null },
-          ]},
-          { name:"App.svelte", type:"file" as const, icon:"svelte", route:null },
-          { name:"app.css",    type:"file" as const, icon:"css",    route:null },
-          { name:"main.ts",    type:"file" as const, icon:"ts",     route:null },
-        ]},
-        { name:"bun", type:"folder" as const, key:"bun", children:[
-          { name:"index.ts",           type:"file" as const, icon:"ts", route:null },
-          { name:"webgpu-renderer.ts", type:"file" as const, icon:"ts", route:null },
-        ]},
-      ]},
-      { name:"External Libraries", type:"folder" as const, key:"ext", children:[
-        { name:"svelte 5.14.1",          type:"file" as const, icon:"svelte", route:null },
-        { name:"tailwindcss 4.2.2",      type:"file" as const, icon:"css",   route:null },
-        { name:"vite 6.0.3",             type:"file" as const, icon:"ts",    route:null },
-      ]},
-    ]},
-    { name:"package.json",     type:"file" as const, icon:"json", route:null },
-    { name:"vite.config.ts",   type:"file" as const, icon:"ts",   route:null },
-    { name:"svelte.config.js", type:"file" as const, icon:"js",   route:null },
-    { name:"tsconfig.json",    type:"file" as const, icon:"json", route:null },
-  ];
+  // (file tree is now managed by Sidebar.svelte)
 
   // ── Tabs ─────────────────────────────────────────────────────
   const tabs = [
@@ -145,20 +115,16 @@
     };
   });
 
-  // ── Terminal ──────────────────────────────────────────────
-  type TermLine = { t: string; c: string };
-  let termLines  = $state<TermLine[]>([]);
-  let termInput  = $state("");
-  let termPrompt = $state("~");
-  let termReady  = $state(false);   // false = waiting for first prompt
-  let termEl: HTMLDivElement | null = $state(null);
-  let termInputEl: HTMLInputElement | null = $state(null);
-
-  // App-level RPC schema (must match src/bun/index.ts)
+  // ── Terminal RPC ──────────────────────────────────────────────────────────
   type AppSchema = {
     bun: {
       requests: Record<string, never>;
-      messages: { "terminal:input": { data: string } };
+      messages: {
+        "terminal:input": { data: string };
+        "terminal:resize": { cols: number; rows: number };
+        /** Notifica al proceso Bun que el terminal está listo para recibir output */
+        "terminal:ready": Record<string, never>;
+      };
     };
     webview: {
       requests: Record<string, never>;
@@ -172,77 +138,35 @@
     };
   };
 
+  let termWriteFn: ((b64: string) => void) | null = null;
+  let termFullscreen = $state(false);
+
   const termRpc = Electroview.defineRPC<AppSchema>({
     handlers: {
       messages: {
         "terminal:output": ({ data }) => {
-          // The bun process sends a special control sequence \x00PROMPT:/path\x00
-          // when the shell is ready for the next command.
-          const PROMPT_RE = /\x00PROMPT:([^\x00]*)\x00/g;
-          let lastIndex = 0;
-          let m: RegExpExecArray | null;
-
-          while ((m = PROMPT_RE.exec(data)) !== null) {
-            // Flush any text before this prompt marker
-            const before = data.slice(lastIndex, m.index);
-            if (before) appendTermText(before);
-            lastIndex = m.index + m[0].length;
-
-            // Update prompt directory and mark terminal as ready
-            const rawDir = m[1] ?? "~";
-            // Replace home dir with ~ for display (we don't know HOME in the browser,
-            // but if the path starts with /Users/... or /home/..., shorten it)
-            termPrompt = rawDir.replace(/^\/(?:Users|home)\/[^/]+/, "~") || "~";
-            termReady = true;
-          }
-
-          // Flush remaining text after last marker
-          const tail = data.slice(lastIndex);
-          if (tail) appendTermText(tail);
-
-          scrollTerm();
+          termWriteFn?.(data);
         },
+        "menu:open-settings": () => { /* TODO */ },
+        "menu:new-file":      () => { /* TODO */ },
+        "menu:open-file":     () => { /* TODO */ },
+        "menu:save-file":     () => { /* TODO */ },
       },
     },
   });
 
   new Electroview({ rpc: termRpc });
 
-  function appendTermText(raw: string) {
-    // Split on newlines and merge into the lines array
-    const parts = raw.split("\n");
-    if (termLines.length === 0) termLines.push({ t: "", c: "#a9b7c6" });
-
-    parts.forEach((part, i) => {
-      if (i === 0) {
-        // Append to last existing line
-        termLines[termLines.length - 1].t += part;
-      } else {
-        termLines.push({ t: part, c: "#a9b7c6" });
-      }
-    });
+  function sendTermInput(b64: string) {
+    termRpc.send["terminal:input"]({ data: b64 });
   }
 
-  async function scrollTerm() {
-    await tick();
-    if (termEl) termEl.scrollTop = termEl.scrollHeight;
+  function sendTermResize(cols: number, rows: number) {
+    termRpc.send["terminal:resize"]({ cols, rows });
   }
 
-  function sendTermInput() {
-    const cmd = termInput;
-    // Echo the command line into the terminal
-    if (termLines.length === 0) termLines.push({ t: "", c: "#a9b7c6" });
-    termLines[termLines.length - 1].t += cmd;
-    termLines.push({ t: "", c: "#a9b7c6" });
-    termReady = false;
-    termInput = "";
-    // Send to bun process
-    termRpc.send["terminal:input"]({ data: cmd });
-    scrollTerm();
-  }
-
-  function focusTerm() {
-    termInputEl?.focus();
+  function sendTermReady() {
+    termRpc.send["terminal:ready"]({});
   }
 </script>
 
@@ -486,63 +410,46 @@
         class="flex flex-col bg-jb-panel border-r border-jb-border flex-shrink-0 min-h-0 relative"
         style:width="{ws.leftWidth}px"
       >
-        <!-- Tool window header -->
-        <div class="flex items-center justify-between px-2 h-[30px] bg-jb-panel2 border-b border-jb-border flex-shrink-0">
-          <div class="flex items-center gap-2">
-            {#if ws.activeTool === "project"}
-              <span class="text-[12px] font-semibold text-jb-text2">Project</span>
-            {:else if ws.activeTool === "structure"}
-              <span class="text-[12px] font-semibold text-jb-text2">Structure</span>
-            {:else if ws.activeTool === "git"}
-              <span class="text-[12px] font-semibold text-jb-text2">Git</span>
-            {:else}
-              <span class="text-[12px] font-semibold text-jb-text2">Bookmarks</span>
-            {/if}
-          </div>
-          <!-- Header actions -->
-          <div class="flex items-center gap-0.5">
-            <button title="Expand All" class="w-5 h-5 flex items-center justify-center rounded text-jb-muted hover:bg-jb-hover hover:text-jb-text bg-transparent border-none cursor-pointer text-[11px]">⊞</button>
-            <button title="Collapse All" class="w-5 h-5 flex items-center justify-center rounded text-jb-muted hover:bg-jb-hover hover:text-jb-text bg-transparent border-none cursor-pointer text-[11px]">⊟</button>
-            <button
-              title="Hide"
-              onclick={() => onUpdate({ leftPanelOpen: false })}
-              class="w-5 h-5 flex items-center justify-center rounded text-jb-muted hover:bg-jb-hover hover:text-jb-text bg-transparent border-none cursor-pointer text-[11px]"
-            >✕</button>
-          </div>
-        </div>
 
-        <!-- Tool window body -->
-        <div class="flex-1 overflow-y-auto overflow-x-hidden min-h-0 py-1">
+        {#if ws.activeTool === "project"}
+          <!-- ── SIDEBAR (self-contained: owns its header + file dialog) ── -->
+          <Sidebar
+            expandedFolders={ws.expandedFolders}
+            onToggleFolder={(key) => {
+              const updated = { ...ws.expandedFolders, [key]: !ws.expandedFolders[key] };
+              onUpdate({ expandedFolders: updated });
+            }}
+            activeRoute={ws.activeRoute}
+            onClose={() => onUpdate({ leftPanelOpen: false })}
+          />
 
-          {#if ws.activeTool === "project"}
-            <!-- Project tree -->
-            <div class="flex items-center gap-1 px-2 py-0.5 text-[11px] text-jb-muted">
-              <svg viewBox="0 0 12 12" width="12" height="12" fill="#4e9ede" opacity="0.7">
-                <rect x="0.5" y="1.5" width="11" height="9" rx="1"/>
-                <rect x="0.5" y="1.5" width="5" height="3" rx="1" fill="#6aaddc"/>
-              </svg>
-              <span class="font-semibold text-jb-text">ultimate_editor</span>
-              <span class="ml-auto text-jb-dim text-[10px]">~/Documents</span>
+        {:else}
+          <!-- ── Generic header for non-project tools ── -->
+          <div class="flex items-center justify-between px-2 h-[30px] bg-jb-panel2 border-b border-jb-border flex-shrink-0">
+            <div class="flex items-center gap-2">
+              {#if ws.activeTool === "structure"}
+                <span class="text-[12px] font-semibold text-jb-text2">Structure</span>
+              {:else if ws.activeTool === "git"}
+                <span class="text-[12px] font-semibold text-jb-text2">Git</span>
+              {:else}
+                <span class="text-[12px] font-semibold text-jb-text2">Bookmarks</span>
+              {/if}
             </div>
-            <FileTree
-              nodes={fileTree}
-              expandedFolders={ws.expandedFolders}
-              onToggleFolder={(key) => {
-                const updated = { ...ws.expandedFolders, [key]: !ws.expandedFolders[key] };
-                onUpdate({ expandedFolders: updated });
-              }}
-              activeRoute={ws.activeRoute}
-            />
-            <!-- Scratches section -->
-            <div class="flex items-center gap-1 px-2 py-0.5 text-[11px] text-jb-muted cursor-pointer hover:bg-jb-hover mt-1">
-              <span class="text-[11px] text-jb-muted w-3 text-center">▶</span>
-              <svg viewBox="0 0 14 14" width="13" height="13" fill="none" stroke="#808080" stroke-width="1">
-                <path d="M2 2h10v10H2z"/><path d="M5 5h4M5 8h3"/>
-              </svg>
-              <span>Scratches and Consoles</span>
+            <div class="flex items-center gap-0.5">
+              <button title="Expand All" class="w-5 h-5 flex items-center justify-center rounded text-jb-muted hover:bg-jb-hover hover:text-jb-text bg-transparent border-none cursor-pointer text-[11px]">⊞</button>
+              <button title="Collapse All" class="w-5 h-5 flex items-center justify-center rounded text-jb-muted hover:bg-jb-hover hover:text-jb-text bg-transparent border-none cursor-pointer text-[11px]">⊟</button>
+              <button
+                title="Hide"
+                onclick={() => onUpdate({ leftPanelOpen: false })}
+                class="w-5 h-5 flex items-center justify-center rounded text-jb-muted hover:bg-jb-hover hover:text-jb-text bg-transparent border-none cursor-pointer text-[11px]"
+              >✕</button>
             </div>
+          </div>
 
-          {:else if ws.activeTool === "structure"}
+          <!-- Tool window body -->
+          <div class="flex-1 overflow-y-auto overflow-x-hidden min-h-0 py-1">
+
+          {#if ws.activeTool === "structure"}
             <div class="px-3 py-2 text-[12px] text-jb-muted">
               <div class="mb-2 font-semibold text-jb-text">index.svelte</div>
               {#each [
@@ -593,7 +500,8 @@
             <div class="flex items-center justify-center h-20 text-jb-muted text-[12px]">No bookmarks yet.</div>
           {/if}
 
-        </div>
+          </div><!-- /tool window body -->
+        {/if}<!-- /activeTool === project -->
 
         <!-- Left panel resize handle -->
         <div
@@ -780,49 +688,33 @@
               {#if ws.activeBottom === "terminal"}
                 <!-- svelte-ignore a11y_click_events_have_key_events -->
                 <!-- svelte-ignore a11y_no_static_element_interactions -->
-                <div class="flex flex-col h-full" onclick={focusTerm}>
+                <div
+                  class="flex flex-col h-full"
+                  class:fixed={termFullscreen}
+                  class:inset-0={termFullscreen}
+                  class:z-50={termFullscreen}
+                  class:bg-jb-bg={termFullscreen}
+                >
                   <!-- Tab bar -->
                   <div class="flex items-center bg-jb-panel h-[26px] border-b border-jb-border flex-shrink-0 px-2 gap-1 text-[11px]">
                     <span class="text-jb-text font-medium border-b border-jb-blue pb-px px-1">Local</span>
                     <span class="text-jb-muted ml-1">— zsh</span>
                     <button class="ml-auto bg-transparent border-none text-jb-muted cursor-pointer hover:text-jb-text px-1 text-[13px]">＋</button>
-                    <button class="bg-transparent border-none text-jb-muted cursor-pointer hover:text-jb-text px-1">⊟</button>
+                    <button
+                      title={termFullscreen ? "Restore" : "Fullscreen"}
+                      onclick={() => (termFullscreen = !termFullscreen)}
+                      class="bg-transparent border-none text-jb-muted cursor-pointer hover:text-jb-text px-1 text-[12px]"
+                    >{termFullscreen ? "⊟" : "⤢"}</button>
                   </div>
 
-                  <!-- Output area -->
-                  <div
-                    bind:this={termEl}
-                    class="flex-1 overflow-y-auto px-3 pt-2 pb-0 font-mono text-[12px] leading-relaxed bg-jb-bg"
-                  >
-                    {#each termLines as line}
-                      <div class="whitespace-pre-wrap break-all" style:color={line.c || "#a9b7c6"}>{line.t}</div>
-                    {/each}
-
-                    <!-- Input line (shown when shell is ready) -->
-                    <div class="flex items-center pb-2 mt-0.5">
-                      {#if termReady}
-                        <span class="text-jb-green mr-1 select-none">{termPrompt}</span>
-                        <span class="text-jb-muted mr-1 select-none">$</span>
-                      {:else if termLines.length === 0}
-                        <span class="text-jb-muted text-[11px] italic select-none">Connecting to shell…</span>
-                      {/if}
-                      <!-- Hidden real input -->
-                      <input
-                        bind:this={termInputEl}
-                        bind:value={termInput}
-                        type="text"
-                        class="flex-1 bg-transparent border-none outline-none text-jb-text font-mono text-[12px] p-0 m-0 caret-jb-text"
-                        style="font-family: inherit;"
-                        onkeydown={(e) => {
-                          if (e.key === "Enter") { e.preventDefault(); sendTermInput(); }
-                          if (e.key === "c" && e.ctrlKey) { termInput = ""; termReady = true; }
-                        }}
-                        spellcheck={false}
-                        autocomplete="off"
-                        autocorrect="off"
-                        autocapitalize="off"
-                      />
-                    </div>
+                  <!-- xterm.js terminal -->
+                  <div class="flex-1 min-h-0 overflow-hidden">
+                    <Terminal
+                      bind:fullscreen={termFullscreen}
+                      onInput={sendTermInput}
+                      onResize={sendTermResize}
+                      onMounted={(fn) => { termWriteFn = fn; sendTermReady(); }}
+                    />
                   </div>
                 </div>
 
@@ -861,9 +753,7 @@
                     <span class="ml-auto text-jb-green">● Running</span>
                   </div>
                   <div class="flex-1 overflow-y-auto px-3 py-2 font-mono text-[12px] leading-relaxed bg-jb-bg">
-                    {#each termLines.slice(0, 5) as line}
-                      <div class="whitespace-pre-wrap break-all" style:color={line.c || "#a9b7c6"}>{line.t}</div>
-                    {/each}
+                    <div class="text-jb-muted text-[12px] italic">No run output yet.</div>
                   </div>
                 </div>
 
