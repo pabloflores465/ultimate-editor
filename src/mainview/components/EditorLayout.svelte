@@ -1,7 +1,8 @@
 <script lang="ts">
-  import { onMount } from "svelte";
+  import { onMount, tick } from "svelte";
   import FileTree from "./FileTree.svelte";
   import type { WorkspaceState } from "../stores/workspaceStore.svelte";
+  import { Electroview } from "electrobun/view";
 
   // ── Props ─────────────────────────────────────────────────────
   let {
@@ -144,18 +145,105 @@
     };
   });
 
-  // ── Terminal output ───────────────────────────────────────
-  const termLines = [
-    { t: "$ bun run dev",                          c: "#a9b7c6" },
-    { t: "  ➜  Electrobun v1.16.0 starting...",    c: "#629755" },
-    { t: "  ➜  Local:   http://localhost:5173/",   c: "#4e9ede" },
-    { t: "  ➜  Network: use --host to expose",     c: "#808080" },
-    { t: "  ➜  watching for file changes...",      c: "#629755" },
-    { t: "",                                       c: "" },
-    { t: "Process finished with exit code 0",      c: "#808080" },
-    { t: "",                                       c: "" },
-    { t: "$ ▌",                                    c: "#a9b7c6" },
-  ];
+  // ── Terminal ──────────────────────────────────────────────
+  type TermLine = { t: string; c: string };
+  let termLines  = $state<TermLine[]>([]);
+  let termInput  = $state("");
+  let termPrompt = $state("~");
+  let termReady  = $state(false);   // false = waiting for first prompt
+  let termEl: HTMLDivElement | null = $state(null);
+  let termInputEl: HTMLInputElement | null = $state(null);
+
+  // App-level RPC schema (must match src/bun/index.ts)
+  type AppSchema = {
+    bun: {
+      requests: Record<string, never>;
+      messages: { "terminal:input": { data: string } };
+    };
+    webview: {
+      requests: Record<string, never>;
+      messages: {
+        "terminal:output": { data: string };
+        "menu:open-settings": Record<string, never>;
+        "menu:new-file": Record<string, never>;
+        "menu:open-file": Record<string, never>;
+        "menu:save-file": Record<string, never>;
+      };
+    };
+  };
+
+  const termRpc = Electroview.defineRPC<AppSchema>({
+    handlers: {
+      messages: {
+        "terminal:output": ({ data }) => {
+          // The bun process sends a special control sequence \x00PROMPT:/path\x00
+          // when the shell is ready for the next command.
+          const PROMPT_RE = /\x00PROMPT:([^\x00]*)\x00/g;
+          let lastIndex = 0;
+          let m: RegExpExecArray | null;
+
+          while ((m = PROMPT_RE.exec(data)) !== null) {
+            // Flush any text before this prompt marker
+            const before = data.slice(lastIndex, m.index);
+            if (before) appendTermText(before);
+            lastIndex = m.index + m[0].length;
+
+            // Update prompt directory and mark terminal as ready
+            const rawDir = m[1] ?? "~";
+            // Replace home dir with ~ for display (we don't know HOME in the browser,
+            // but if the path starts with /Users/... or /home/..., shorten it)
+            termPrompt = rawDir.replace(/^\/(?:Users|home)\/[^/]+/, "~") || "~";
+            termReady = true;
+          }
+
+          // Flush remaining text after last marker
+          const tail = data.slice(lastIndex);
+          if (tail) appendTermText(tail);
+
+          scrollTerm();
+        },
+      },
+    },
+  });
+
+  new Electroview({ rpc: termRpc });
+
+  function appendTermText(raw: string) {
+    // Split on newlines and merge into the lines array
+    const parts = raw.split("\n");
+    if (termLines.length === 0) termLines.push({ t: "", c: "#a9b7c6" });
+
+    parts.forEach((part, i) => {
+      if (i === 0) {
+        // Append to last existing line
+        termLines[termLines.length - 1].t += part;
+      } else {
+        termLines.push({ t: part, c: "#a9b7c6" });
+      }
+    });
+  }
+
+  async function scrollTerm() {
+    await tick();
+    if (termEl) termEl.scrollTop = termEl.scrollHeight;
+  }
+
+  function sendTermInput() {
+    const cmd = termInput;
+    // Echo the command line into the terminal
+    if (termLines.length === 0) termLines.push({ t: "", c: "#a9b7c6" });
+    termLines[termLines.length - 1].t += cmd;
+    termLines.push({ t: "", c: "#a9b7c6" });
+    termReady = false;
+    termInput = "";
+    // Send to bun process
+    termRpc.send["terminal:input"]({ data: cmd });
+    scrollTerm();
+  }
+
+  function focusTerm() {
+    termInputEl?.focus();
+  }
 </script>
 
 <!-- ══════════════════════════════════════════
@@ -173,10 +261,13 @@
        overflow-hidden on the left column prevents any nav bleed. -->
   <header class="titlebar flex items-center h-[28px] bg-jb-panel flex-shrink-0 border-b border-jb-border">
 
-    <!-- LEFT: nav wrapper (flex-1, overflow-hidden) -->
+    <!-- LEFT: nav wrapper (flex-1, overflow-hidden)
+         The nav is ALWAYS in the DOM so the ResizeObserver can measure it.
+         We toggle visibility between the nav and the hamburger. -->
     <div bind:this={navWrapEl} class="no-drag flex items-center flex-1 min-w-0 overflow-hidden pl-1 relative">
+
+      <!-- Hamburger (visible only when nav overflows) -->
       {#if navOverflows}
-        <!-- Hamburger -->
         <button
           onclick={() => hamburgerOpen = !hamburgerOpen}
           class="flex flex-col justify-center items-center w-[22px] h-[22px] gap-[4px] rounded hover:bg-jb-hover flex-shrink-0"
@@ -198,16 +289,23 @@
             {/each}
           </div>
         {/if}
-      {:else}
-        <!-- Full nav — hidden via overflow-hidden if it grows past its container -->
-        <nav bind:this={navEl} class="flex items-center gap-0">
-          {#each ["File","Edit","View","Navigate","Code","Refactor","Build","Run","Tools","Git","Window","Help"] as m}
-            <span class="px-2 py-0.5 text-[12px] text-jb-text cursor-pointer rounded hover:bg-jb-hover whitespace-nowrap">
-              {m}
-            </span>
-          {/each}
-        </nav>
       {/if}
+
+      <!-- Full nav — always in DOM for measurement, hidden when hamburger is active -->
+      <nav
+        bind:this={navEl}
+        class="flex items-center gap-0"
+        style:visibility={navOverflows ? "hidden" : "visible"}
+        style:position={navOverflows ? "absolute" : "static"}
+        style:pointer-events={navOverflows ? "none" : "auto"}
+      >
+        {#each ["File","Edit","View","Navigate","Code","Refactor","Build","Run","Tools","Git","Window","Help"] as m}
+          <span class="px-2 py-0.5 text-[12px] text-jb-text cursor-pointer rounded hover:bg-jb-hover whitespace-nowrap">
+            {m}
+          </span>
+        {/each}
+      </nav>
+
     </div>
 
     <!-- CENTER: title -->
@@ -680,17 +778,51 @@
             <div class="flex-1 flex flex-col min-h-0 overflow-hidden">
 
               {#if ws.activeBottom === "terminal"}
-                <div class="flex flex-col h-full">
+                <!-- svelte-ignore a11y_click_events_have_key_events -->
+                <!-- svelte-ignore a11y_no_static_element_interactions -->
+                <div class="flex flex-col h-full" onclick={focusTerm}>
+                  <!-- Tab bar -->
                   <div class="flex items-center bg-jb-panel h-[26px] border-b border-jb-border flex-shrink-0 px-2 gap-1 text-[11px]">
                     <span class="text-jb-text font-medium border-b border-jb-blue pb-px px-1">Local</span>
                     <span class="text-jb-muted ml-1">— zsh</span>
                     <button class="ml-auto bg-transparent border-none text-jb-muted cursor-pointer hover:text-jb-text px-1 text-[13px]">＋</button>
                     <button class="bg-transparent border-none text-jb-muted cursor-pointer hover:text-jb-text px-1">⊟</button>
                   </div>
-                  <div class="flex-1 overflow-y-auto px-3 py-2 font-mono text-[12px] leading-relaxed bg-jb-bg">
+
+                  <!-- Output area -->
+                  <div
+                    bind:this={termEl}
+                    class="flex-1 overflow-y-auto px-3 pt-2 pb-0 font-mono text-[12px] leading-relaxed bg-jb-bg"
+                  >
                     {#each termLines as line}
-                      <div class="whitespace-pre" style:color={line.c || "#a9b7c6"}>{line.t}</div>
+                      <div class="whitespace-pre-wrap break-all" style:color={line.c || "#a9b7c6"}>{line.t}</div>
                     {/each}
+
+                    <!-- Input line (shown when shell is ready) -->
+                    <div class="flex items-center pb-2 mt-0.5">
+                      {#if termReady}
+                        <span class="text-jb-green mr-1 select-none">{termPrompt}</span>
+                        <span class="text-jb-muted mr-1 select-none">$</span>
+                      {:else if termLines.length === 0}
+                        <span class="text-jb-muted text-[11px] italic select-none">Connecting to shell…</span>
+                      {/if}
+                      <!-- Hidden real input -->
+                      <input
+                        bind:this={termInputEl}
+                        bind:value={termInput}
+                        type="text"
+                        class="flex-1 bg-transparent border-none outline-none text-jb-text font-mono text-[12px] p-0 m-0 caret-jb-text"
+                        style="font-family: inherit;"
+                        onkeydown={(e) => {
+                          if (e.key === "Enter") { e.preventDefault(); sendTermInput(); }
+                          if (e.key === "c" && e.ctrlKey) { termInput = ""; termReady = true; }
+                        }}
+                        spellcheck={false}
+                        autocomplete="off"
+                        autocorrect="off"
+                        autocapitalize="off"
+                      />
+                    </div>
                   </div>
                 </div>
 
@@ -729,8 +861,8 @@
                     <span class="ml-auto text-jb-green">● Running</span>
                   </div>
                   <div class="flex-1 overflow-y-auto px-3 py-2 font-mono text-[12px] leading-relaxed bg-jb-bg">
-                    {#each termLines.slice(0,5) as line}
-                      <div class="whitespace-pre" style:color={line.c || "#a9b7c6"}>{line.t}</div>
+                    {#each termLines.slice(0, 5) as line}
+                      <div class="whitespace-pre-wrap break-all" style:color={line.c || "#a9b7c6"}>{line.t}</div>
                     {/each}
                   </div>
                 </div>

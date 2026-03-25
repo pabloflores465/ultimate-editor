@@ -26,12 +26,22 @@ export default defineConfig({
   ],
   root: "src/mainview",
   base: "./",
+  resolve: {
+    alias: {
+      // Map the "electrobun/view" export to the browser API bundle
+      "electrobun/view": new URL(
+        "./node_modules/electrobun/dist/api/browser/index.ts",
+        import.meta.url,
+      ).pathname,
+    },
+  },
   build: {
     outDir: "../../dist",
     emptyOutDir: true,
   },
   optimizeDeps: {
     exclude: ["svelte-spa-router"],
+    include: [],
   },
   server: {
     port: 5173,
