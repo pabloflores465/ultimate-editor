@@ -1,4 +1,5 @@
-import { BrowserWindow, Updater, WGPUView } from "electrobun/bun";
+import { BrowserWindow, Updater, WGPUView, ApplicationMenu } from "electrobun/bun";
+const { setApplicationMenu, on } = ApplicationMenu;
 import { renderTriangle } from "./webgpu-renderer";
 
 const DEV_SERVER_PORT = 5173;
@@ -54,5 +55,97 @@ setInterval(() => {
 		}
 	}
 }, 200);
+
+// ── Menu Bar ──────────────────────────────────────────────────────────────
+setApplicationMenu([
+  {
+    label: "Svelte App",
+    submenu: [
+      { role: "about" },
+      { type: "separator" },
+      {
+        label: "Settings...",
+        accelerator: "Cmd+,",
+        action: "open-settings",
+      },
+      { type: "separator" },
+      { role: "hide" },
+      { role: "hideOthers" },
+      { role: "showAll" },
+      { type: "separator" },
+      { role: "quit" },
+    ],
+  },
+  {
+    label: "File",
+    submenu: [
+      {
+        label: "New File",
+        accelerator: "Cmd+N",
+        action: "new-file",
+      },
+      {
+        label: "Open...",
+        accelerator: "Cmd+O",
+        action: "open-file",
+      },
+      { type: "separator" },
+      {
+        label: "Save",
+        accelerator: "Cmd+S",
+        action: "save-file",
+      },
+      { type: "separator" },
+      { role: "close" },
+    ],
+  },
+  {
+    label: "Edit",
+    submenu: [
+      { role: "undo" },
+      { role: "redo" },
+      { type: "separator" },
+      { role: "cut" },
+      { role: "copy" },
+      { role: "paste" },
+      { role: "selectAll" },
+    ],
+  },
+  {
+    label: "View",
+    submenu: [
+      { role: "toggleFullScreen" },
+    ],
+  },
+  {
+    label: "Window",
+    submenu: [
+      { role: "minimize" },
+      { role: "zoom" },
+      { type: "separator" },
+      { role: "bringAllToFront" },
+    ],
+  },
+]);
+
+// ── Manejar clicks del menú ────────────────────────────────────────────────
+on("application-menu-clicked", ({ action }: { action: string }) => {
+  switch (action) {
+    case "open-settings":
+      // TODO: abrir ventana de settings
+      console.log("Abrir Settings");
+      mainWindow.webContents.send({ name: "menu:open-settings", data: {} });
+      break;
+    case "new-file":
+      mainWindow.webContents.send({ name: "menu:new-file", data: {} });
+      break;
+    case "open-file":
+      mainWindow.webContents.send({ name: "menu:open-file", data: {} });
+      break;
+    case "save-file":
+      mainWindow.webContents.send({ name: "menu:save-file", data: {} });
+      break;
+  }
+});
 
 console.log("Svelte app started!");

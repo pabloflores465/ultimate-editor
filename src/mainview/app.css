@@ -1,18 +1,374 @@
 @import "tailwindcss";
 @source "../../**/*.svelte";
 
-* {
-	box-sizing: border-box;
+/* ── JetBrains Darcula color tokens ── */
+@theme {
+  /* Backgrounds */
+  --color-jb-bg:       #2b2b2b;   /* editor bg */
+  --color-jb-panel:    #3c3f41;   /* panels, toolbars, strips */
+  --color-jb-panel2:   #313335;   /* slightly darker panels */
+  --color-jb-input:    #45484a;   /* inputs */
+  --color-jb-hover:    #4c5052;   /* hover state */
+  --color-jb-active:   #4e5254;   /* active/pressed */
+  --color-jb-select:   #214283;   /* selection blue */
+  --color-jb-border:   #555759;   /* borders */
+  --color-jb-border2:  #4b4b4b;   /* softer border */
+
+  /* Text */
+  --color-jb-text:     #a9b7c6;   /* main text */
+  --color-jb-text2:    #c0c0c0;   /* slightly brighter */
+  --color-jb-muted:    #808080;   /* muted / comments */
+  --color-jb-dim:      #5c6370;   /* very muted */
+
+  /* Syntax / accent */
+  --color-jb-green:    #629755;   /* run / success */
+  --color-jb-green2:   #6a9955;   /* strings */
+  --color-jb-blue:     #4e9ede;   /* debug / links */
+  --color-jb-orange:   #cc7832;   /* keywords */
+  --color-jb-yellow:   #ffc66d;   /* attributes */
+  --color-jb-red:      #ff6b68;   /* errors */
+  --color-jb-purple:   #9876aa;   /* types */
+  --color-jb-teal:     #aed9b8;   /* numbers */
 }
 
-body {
-	margin: 0;
-	padding: 0;
-	font-family:
-		-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu,
-		Cantarell, sans-serif;
+*, *::before, *::after { box-sizing: border-box; }
+
+html, body {
+  margin: 0; padding: 0;
+  width: 100%; height: 100%;
+  overflow: hidden;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-size: 13px;
 }
 
-#app {
-	min-height: 100vh;
+#app { width: 100vw; height: 100vh; overflow: hidden; }
+
+/* Scrollbars */
+::-webkit-scrollbar { width: 7px; height: 7px; }
+::-webkit-scrollbar-track { background: #3c3f41; }
+::-webkit-scrollbar-thumb { background: #5a5d5f; border-radius: 2px; }
+::-webkit-scrollbar-thumb:hover { background: #72767a; }
+
+/* ══════════════════════════════════════════════════════════════
+   WORKSPACE SWITCHER — Animations & Layout
+   Bezier curves based on Material Design motion spec:
+   · Standard:    cubic-bezier(0.4, 0, 0.2, 1)  — stays on screen
+   · Accelerate:  cubic-bezier(0.4, 0, 1, 1)    — exits screen
+   · Decelerate:  cubic-bezier(0, 0, 0.2, 1)    — enters screen
+   · CSS ease:    cubic-bezier(0.25, 0.1, 0.25, 1) — micro interactions
+══════════════════════════════════════════════════════════════ */
+
+/* Clipping viewport — prevents overflow during slide */
+.ws-viewport {
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+  position: relative;
+}
+
+/* The sliding panel — each workspace fills the entire viewport */
+.ws-slide {
+  width: 100%;
+  height: 100%;
+  position: absolute;
+  top: 0;
+  left: 0;
+}
+
+/* ── Workspace slide keyframes ───────────────────────────── */
+@keyframes ws-from-right {
+  from { transform: translateX(100%); }
+  to   { transform: translateX(0); }
+}
+@keyframes ws-from-left {
+  from { transform: translateX(-100%); }
+  to   { transform: translateX(0); }
+}
+
+/* Next workspace (slides in from the right) */
+.ws-slide--enter-right {
+  animation: ws-from-right 300ms cubic-bezier(0.4, 0, 0.2, 1) both;
+}
+/* Previous workspace (slides in from the left) */
+.ws-slide--enter-left {
+  animation: ws-from-left 300ms cubic-bezier(0.4, 0, 0.2, 1) both;
+}
+
+/* ── Overview backdrop ───────────────────────────────────── */
+@keyframes ws-overview-fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+@keyframes ws-overview-fade-out {
+  from { opacity: 1; }
+  to   { opacity: 0; }
+}
+
+.ws-overview-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  background: rgba(20, 20, 22, 0.82);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 32px;
+  animation: ws-overview-fade-in 220ms cubic-bezier(0.4, 0, 1, 1) both;
+}
+.ws-overview-backdrop.ws-overview--closing {
+  animation: ws-overview-fade-out 200ms cubic-bezier(0.4, 0, 1, 1) both;
+}
+
+/* ── Overview grid of cards ──────────────────────────────── */
+.ws-overview-header {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  color: #c0c0c0;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.ws-overview-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 20px;
+  justify-content: center;
+  align-items: flex-end;
+  padding: 0 40px;
+  max-width: 1200px;
+}
+
+/* ── Workspace cards (thumbnails) ────────────────────────── */
+@keyframes ws-card-pop-in {
+  from { opacity: 0; transform: scale(0.88) translateY(10px); }
+  to   { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+.ws-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  cursor: pointer;
+  border-radius: 7px;
+  padding: 3px;
+  border: 2px solid transparent;
+  position: relative;
+  transition:
+    border-color  150ms cubic-bezier(0.25, 0.1, 0.25, 1),
+    transform     150ms cubic-bezier(0.25, 0.1, 0.25, 1),
+    box-shadow    150ms cubic-bezier(0.25, 0.1, 0.25, 1);
+  animation: ws-card-pop-in 240ms cubic-bezier(0, 0, 0.2, 1) both;
+}
+.ws-card:hover {
+  transform: scale(1.035) translateY(-2px);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
+  border-color: #4e9ede;
+}
+.ws-card--active {
+  border-color: #4e9ede;
+  box-shadow: 0 0 0 1px #4e9ede55, 0 12px 32px rgba(0, 0, 0, 0.5);
+}
+.ws-card--active .ws-card-label-name {
+  color: #4e9ede;
+}
+
+/* Miniature IDE preview */
+.ws-card-preview {
+  width: 220px;
+  aspect-ratio: 16 / 10;
+  background: #2b2b2b;
+  border-radius: 4px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid #555759;
+  pointer-events: none;
+  user-select: none;
+}
+.ws-card-titlebar {
+  height: 9px;
+  background: #3c3f41;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  padding: 0 5px;
+  flex-shrink: 0;
+  border-bottom: 1px solid #555759;
+}
+.ws-card-dot {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  display: inline-block;
+  flex-shrink: 0;
+}
+.ws-card-toolbar {
+  height: 6px;
+  background: #3c3f41;
+  flex-shrink: 0;
+  border-bottom: 1px solid #555759;
+}
+.ws-card-body {
+  flex: 1;
+  display: flex;
+  min-height: 0;
+}
+.ws-card-sidebar {
+  width: 46px;
+  background: #3c3f41;
+  border-right: 1px solid #555759;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 3px 4px;
+}
+.ws-card-sidebar-line {
+  height: 3px;
+  border-radius: 1px;
+  background: #555759;
+  opacity: 0.8;
+}
+.ws-card-editor {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  padding: 4px 5px;
+  gap: 2px;
+}
+.ws-card-line {
+  height: 2px;
+  border-radius: 1px;
+  background: #555759;
+  opacity: 0.55;
+}
+.ws-card-line:nth-child(1) { width: 68%; }
+.ws-card-line:nth-child(2) { width: 88%; }
+.ws-card-line:nth-child(3) { width: 52%; background: #cc7832; opacity: 0.6; }
+.ws-card-line:nth-child(4) { width: 76%; }
+.ws-card-line:nth-child(5) { width: 60%; background: #6a9955; opacity: 0.6; }
+.ws-card-line:nth-child(6) { width: 42%; }
+.ws-card-line:nth-child(7) { width: 80%; background: #4e9ede; opacity: 0.5; }
+.ws-card-line:nth-child(8) { width: 34%; }
+
+.ws-card-bottom-bar {
+  height: 7px;
+  background: #313335;
+  border-top: 1px solid #555759;
+  flex-shrink: 0;
+}
+.ws-card-statusbar {
+  height: 5px;
+  background: #3c3f41;
+  flex-shrink: 0;
+  border-top: 1px solid #555759;
+}
+
+/* Card label */
+.ws-card-label {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 0 4px;
+}
+.ws-card-label-name {
+  font-size: 12px;
+  font-weight: 500;
+  color: #c0c0c0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 220px;
+  transition: color 150ms ease;
+}
+.ws-card-label-route {
+  font-size: 10px;
+  color: #808080;
+  font-family: "JetBrains Mono", "Fira Code", monospace;
+}
+
+/* Delete button on card */
+.ws-card-delete {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: rgba(255,95,87,0.85);
+  border: none;
+  color: white;
+  font-size: 11px;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity 120ms ease, transform 120ms ease;
+  transform: scale(0.8);
+  z-index: 10;
+}
+.ws-card:hover .ws-card-delete {
+  opacity: 1;
+  transform: scale(1);
+}
+.ws-card-delete:hover {
+  background: #ff5f57;
+  transform: scale(1.15) !important;
+}
+
+/* Add new workspace button */
+.ws-add-card {
+  width: 220px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border: 2px dashed #555759;
+  border-radius: 7px;
+  padding: 3px;
+  background: transparent;
+  cursor: pointer;
+  aspect-ratio: 16 / 10;
+  transition:
+    border-color 150ms cubic-bezier(0.25, 0.1, 0.25, 1),
+    background   150ms cubic-bezier(0.25, 0.1, 0.25, 1),
+    transform    150ms cubic-bezier(0.25, 0.1, 0.25, 1);
+  font-family: inherit;
+  color: #808080;
+  animation: ws-card-pop-in 240ms cubic-bezier(0, 0, 0.2, 1) both;
+}
+.ws-add-card:hover {
+  border-color: #4e9ede;
+  background: rgba(78, 158, 222, 0.07);
+  color: #4e9ede;
+  transform: scale(1.02);
+}
+
+/* Workspace indicator pill in toolbar */
+.ws-indicator {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0 8px;
+  height: 22px;
+  border-radius: 4px;
+  font-size: 11px;
+  color: #808080;
+  cursor: pointer;
+  border: none;
+  background: transparent;
+  transition: background 150ms ease, color 150ms ease;
+  font-family: inherit;
+}
+.ws-indicator:hover {
+  background: #4c5052;
+  color: #c0c0c0;
 }
