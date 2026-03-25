@@ -52,12 +52,16 @@
     // Notify backend of initial size
     onResize(term.cols, term.rows);
 
-    // Forward user keystrokes/paste to backend as base64
+    // Forward user keystrokes/paste to backend as base64.
+    // Usamos TextEncoder → reduce a bytes UTF-8 → btoa via String.fromCharCode.
+    // fromCharCode con spread solo es seguro para arrays pequeños (input de usuario
+    // siempre es corto), así que es la opción más rápida aquí.
+    const enc = new TextEncoder();
     term.onData((data: string) => {
-      const b64 = btoa(Array.from(new TextEncoder().encode(data), (b) =>
-        String.fromCharCode(b)
-      ).join(""));
-      onInput(b64);
+      const bytes = enc.encode(data);
+      let bin = "";
+      for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+      onInput(btoa(bin));
     });
 
     // Auto-resize when container changes size
@@ -67,14 +71,12 @@
     });
     ro.observe(containerEl);
 
-    // Expose write function to parent
+    // Expose write function to parent.
+    // Decode base64 → Uint8Array con Uint8Array.from que es nativo (más rápido
+    // que el bucle manual byte-a-byte con índices).
     onMounted((b64: string) => {
       if (!term) return;
-      // Decode base64 → Uint8Array for binary-safe write
-      const raw = atob(b64);
-      const bytes = new Uint8Array(raw.length);
-      for (let i = 0; i < raw.length; i++) bytes[i] = raw.charCodeAt(i);
-      term.write(bytes);
+      term.write(Uint8Array.from(atob(b64), (c) => c.charCodeAt(0)));
     });
 
     return () => {

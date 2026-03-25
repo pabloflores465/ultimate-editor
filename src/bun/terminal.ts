@@ -6,13 +6,19 @@
  *
  * ── Por qué child_process.spawn en lugar de Bun.spawn ───────────────────────
  * Bun.spawn puede ignorar silenciosamente fd numéricos en stdio dependiendo
- * de la versión. Node.js child_process.spawn tiene soporte documentado y
- * explícito para números de fd en el array stdio (posix_spawn_file_actions_adddup2).
+ * de la versión. Node.js child_process.spawn tiene soporte explícito y
+ * documentado para números de fd (posix_spawn_file_actions_adddup2).
  *
  * ── Por qué fs.read en lugar de net.Socket ──────────────────────────────────
  * net.Socket({ fd }) en Bun está diseñado para sockets TCP/Unix. Con fds de
  * caracteres (PTY master) puede no emitir eventos "data" en macOS/ARM64.
  * fs.read con callback usa libuv que sí maneja PTY master fds correctamente.
+ *
+ * ── Optimizaciones de rendimiento ───────────────────────────────────────────
+ * • Batching de output: los chunks que llegan en el mismo tick del event loop
+ *   se fusionan en un solo mensaje RPC, reduciendo overhead de serialización.
+ * • Buffer reutilizable: un único Buffer de 64 KB evita allocaciones frecuentes.
+ * • Sin logging en el hot path: los console.error bloqueaban el event loop.
  */
 
 import { dlopen, FFIType, ptr } from "bun:ffi";
@@ -62,15 +68,11 @@ export function initPty(send: (b64: string) => void): void {
   const { masterFd: mfd, slaveFd: sfd } = createPty();
   masterFd = mfd;
 
-  // Tamaño inicial razonable
   setWinSize(masterFd, 80, 24);
 
-  // ── Spawn zsh con slave PTY como stdin/stdout/stderr ─────────────────────
-  // child_process.spawn acepta números de fd en el array stdio de forma
-  // explícita y documentada; usa posix_spawn_file_actions_adddup2 internamente.
-  console.error(`[PTY] openpty → masterFd=${masterFd} slaveFd=${sfd}`);
-
-  const child = nodeSpawn("/bin/zsh", ["-i"], {
+  // Spawn zsh con slave PTY como stdin/stdout/stderr.
+  // child_process.spawn acepta números de fd en stdio[].
+  nodeSpawn("/bin/zsh", ["-i"], {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     stdio: [sfd, sfd, sfd] as any,
     env: {
@@ -82,36 +84,50 @@ export function initPty(send: (b64: string) => void): void {
     },
     detached: false,
   });
-  console.error(`[PTY] zsh spawned pid=${child.pid}`);
-  child.on("error", (e) => console.error("[PTY] zsh spawn error:", e));
-  child.on("close", (code) => console.error(`[PTY] zsh closed code=${code}`));
 
-  // El padre ya no necesita el slave fd; el hijo tiene su copia
   closeSync(sfd);
 
-  // ── Leer output del PTY master ───────────────────────────────────────────
-  // Se usa fs.read (callback) en lugar de net.Socket porque libuv gestiona
-  // correctamente fds de PTY master via select/poll. net.Socket en Bun con
-  // fds de caracteres puede no emitir eventos "data" en macOS.
-  const buf = Buffer.allocUnsafe(65536);
+  // ── Batching de output ───────────────────────────────────────────────────
+  // Los chunks que llegan en el mismo tick del event loop se acumulan y se
+  // envían juntos en una sola llamada RPC. Esto reduce drásticamente el
+  // overhead cuando el shell produce output en ráfagas (ej: ls, cat, npm run).
+  //
+  // Si el siguiente read llega antes de que setImmediate haya disparado
+  // (mismo tick), se concatena al buffer pendiente → un solo mensaje RPC.
+  // Si llega en un tick distinto, setImmediate ya flusheó y se crea uno nuevo.
+  const readBuf = Buffer.allocUnsafe(65536);
+  let pending: Buffer | null = null;
+
+  function flush(): void {
+    if (pending !== null) {
+      send(pending.toString("base64"));
+      pending = null;
+    }
+  }
 
   function readLoop(): void {
-    read(masterFd, buf, 0, buf.length, null, (err, n) => {
-      if (err) {
-        console.error(`[PTY] read error: ${err.message}`);
-        return; // EIO cuando el shell termina
-      }
+    read(masterFd, readBuf, 0, readBuf.length, null, (err, n) => {
+      if (err) return; // EIO cuando el shell termina
+
       if (n > 0) {
-        console.error(`[PTY] read ${n} bytes → sending to webview`);
-        // Enviar solo los bytes reales (evitar copiar el buffer completo)
-        send(buf.subarray(0, n).toString("base64"));
+        if (pending === null) {
+          // Primer chunk del batch: copiar y programar flush
+          pending = Buffer.from(readBuf.subarray(0, n));
+          setImmediate(flush);
+        } else {
+          // Chunk adicional del mismo tick: concatenar al batch actual
+          const merged = Buffer.allocUnsafe(pending.length + n);
+          pending.copy(merged);
+          readBuf.copy(merged, pending.length, 0, n);
+          pending = merged;
+        }
       }
+
       readLoop();
     });
   }
 
   readLoop();
-  console.error("[PTY] readLoop started");
 }
 
 /** Escribe bytes de entrada del usuario (base64) al PTY master. */
