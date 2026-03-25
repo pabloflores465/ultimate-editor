@@ -16,12 +16,15 @@ export default {
 		watchIgnore: ["dist/**"],
 		mac: {
 			bundleCEF: false,
+			bundleWGPU: true,
 		},
 		linux: {
 			bundleCEF: false,
+			bundleWGPU: true,
 		},
 		win: {
 			bundleCEF: false,
+			bundleWGPU: true,
 		},
 	},
 } satisfies ElectrobunConfig;
