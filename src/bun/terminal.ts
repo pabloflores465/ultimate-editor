@@ -77,10 +77,14 @@ export function initPty(send: (b64: string) => void): void {
     stdio: [sfd, sfd, sfd] as any,
     env: {
       ...process.env,
-      TERM:           "xterm-256color",
-      COLORTERM:      "truecolor",
-      FORCE_COLOR:    "3",
-      CLICOLOR_FORCE: "1",
+      TERM:                "xterm-256color",
+      COLORTERM:           "truecolor",
+      FORCE_COLOR:         "3",
+      CLICOLOR_FORCE:      "1",
+      // Desactiva la línea en blanco antes del prompt que añaden
+      // oh-my-zsh y powerlevel10k por defecto
+      PROMPT_ADD_NEWLINE:  "false",
+      POWERLEVEL9K_PROMPT_ADD_NEWLINE: "false",
     },
     detached: false,
   });

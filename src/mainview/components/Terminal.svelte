@@ -27,6 +27,8 @@
     term = new Terminal({
       cursorBlink: true,
       fontSize: 13,
+      lineHeight: 1.0,
+      letterSpacing: 0,
       fontFamily: '"JetBrains Mono", "Cascadia Code", "Fira Code", monospace',
       allowProposedApi: true,
       scrollback: 10000,
@@ -110,9 +112,13 @@
   /* xterm.js internal layout fixes */
   :global(.terminal-host .xterm) {
     height: 100%;
-    padding: 6px 8px;
+    padding: 2px 6px;
   }
   :global(.terminal-host .xterm-viewport) {
     overflow-y: auto !important;
+  }
+  /* Eliminar cualquier line-height extra que inyecte el navegador */
+  :global(.terminal-host .xterm-rows) {
+    line-height: normal;
   }
 </style>
