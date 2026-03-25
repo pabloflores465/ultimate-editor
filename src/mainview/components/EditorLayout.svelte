@@ -20,6 +20,7 @@
   let resizingLeft   = $state(false);
   let resizingBottom = $state(false);
   let runConfigOpen  = $state(false);
+  let hamburgerOpen  = $state(false);
 
   // ── File tree ────────────────────────────────────────────────
   const fileTree = [
@@ -97,8 +98,30 @@
   // ── Run config ────────────────────────────────────────────
   const runConfigs = ["bun run dev", "bun run build", "bun run hmr"];
 
+  // ── Window width tracking ─────────────────────────────
+  let windowWidth  = $state(window.innerWidth);
+  let navOverflows = $state(false);
+  let navEl        = $state<HTMLElement | null>(null);
+  let navWrapEl    = $state<HTMLElement | null>(null);
+
+  // Re-observe whenever the bound elements change (e.g. after hamburger toggle)
+  $effect(() => {
+    if (!navWrapEl) return;
+    const ro = new ResizeObserver(() => {
+      if (navEl && navWrapEl) {
+        navOverflows = navEl.scrollWidth > navWrapEl.clientWidth;
+      }
+    });
+    ro.observe(navWrapEl);
+    if (navEl) ro.observe(navEl);
+    return () => ro.disconnect();
+  });
+
   // ── Resize ───────────────────────────────────────────────
   onMount(() => {
+    const onResize = () => { windowWidth = window.innerWidth; };
+    window.addEventListener("resize", onResize);
+
     const onMove = (e: MouseEvent) => {
       if (resizingLeft) {
         const w = e.clientX - 25; // 25 = left strip width
@@ -115,6 +138,7 @@
     window.addEventListener("mousemove", onMove);
     window.addEventListener("mouseup", onUp);
     return () => {
+      window.removeEventListener("resize", onResize);
       window.removeEventListener("mousemove", onMove);
       window.removeEventListener("mouseup", onUp);
     };
@@ -144,25 +168,56 @@
 >
 
   <!-- ══ TITLE BAR ══════════════════════════════════════════ -->
-  <header class="titlebar flex items-center h-[28px] bg-jb-panel flex-shrink-0 relative border-b border-jb-border">
-    <!-- macOS-style traffic lights placeholder -->
-    <div class="no-drag flex items-center gap-1.5 px-3 z-10">
-      <span class="w-3 h-3 rounded-full bg-[#ff5f57] inline-block"></span>
-      <span class="w-3 h-3 rounded-full bg-[#ffbd2e] inline-block"></span>
-      <span class="w-3 h-3 rounded-full bg-[#28c840] inline-block"></span>
+  <!-- 3-column layout: [left nav] [title] [right spacer]
+       Left and right are flex-1 so the title stays centered.
+       overflow-hidden on the left column prevents any nav bleed. -->
+  <header class="titlebar flex items-center h-[28px] bg-jb-panel flex-shrink-0 border-b border-jb-border">
+
+    <!-- LEFT: nav wrapper (flex-1, overflow-hidden) -->
+    <div bind:this={navWrapEl} class="no-drag flex items-center flex-1 min-w-0 overflow-hidden pl-1 relative">
+      {#if navOverflows}
+        <!-- Hamburger -->
+        <button
+          onclick={() => hamburgerOpen = !hamburgerOpen}
+          class="flex flex-col justify-center items-center w-[22px] h-[22px] gap-[4px] rounded hover:bg-jb-hover flex-shrink-0"
+          title="Menu"
+        >
+          <span class="block w-[13px] h-[1.5px] bg-jb-muted rounded"></span>
+          <span class="block w-[13px] h-[1.5px] bg-jb-muted rounded"></span>
+          <span class="block w-[13px] h-[1.5px] bg-jb-muted rounded"></span>
+        </button>
+        <!-- Dropdown -->
+        {#if hamburgerOpen}
+          <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
+          <div class="fixed inset-0 z-40" onclick={() => hamburgerOpen = false}></div>
+          <div class="absolute top-full left-0 mt-px bg-jb-panel border border-jb-border rounded shadow-lg z-50 py-1 min-w-[160px]">
+            {#each ["File","Edit","View","Navigate","Code","Refactor","Build","Run","Tools","Git","Window","Help"] as m}
+              <span class="block px-4 py-1.5 text-[12px] text-jb-text cursor-pointer hover:bg-jb-select whitespace-nowrap">
+                {m}
+              </span>
+            {/each}
+          </div>
+        {/if}
+      {:else}
+        <!-- Full nav — hidden via overflow-hidden if it grows past its container -->
+        <nav bind:this={navEl} class="flex items-center gap-0">
+          {#each ["File","Edit","View","Navigate","Code","Refactor","Build","Run","Tools","Git","Window","Help"] as m}
+            <span class="px-2 py-0.5 text-[12px] text-jb-text cursor-pointer rounded hover:bg-jb-hover whitespace-nowrap">
+              {m}
+            </span>
+          {/each}
+        </nav>
+      {/if}
     </div>
-    <!-- Title (centered) -->
-    <div class="absolute inset-0 flex items-center justify-center text-[12px] text-jb-muted pointer-events-none font-medium">
+
+    <!-- CENTER: title -->
+    <div class="flex-shrink-0 text-[12px] text-jb-muted font-medium pointer-events-none px-4">
       ultimate_editor — WebStorm
     </div>
-    <!-- Menu -->
-    <nav class="no-drag flex items-center gap-0 ml-12 z-10">
-      {#each ["File","Edit","View","Navigate","Code","Refactor","Build","Run","Tools","Git","Window","Help"] as m}
-        <span class="px-2 py-0.5 text-[12px] text-jb-text cursor-pointer rounded hover:bg-jb-hover whitespace-nowrap">
-          {m}
-        </span>
-      {/each}
-    </nav>
+
+    <!-- RIGHT: mirror spacer to keep title centered -->
+    <div class="flex-1 min-w-0"></div>
+
   </header>
 
   <!-- ══ MAIN TOOLBAR ══════════════════════════════════════ -->

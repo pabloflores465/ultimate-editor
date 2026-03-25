@@ -1,4 +1,25 @@
 <script lang="ts">
+  /**
+   * WorkspaceSwitcher — GNOME-inspired workspace switching
+   *
+   * Design principles from GNOME Shell + KDE Plasma research:
+   *   · Gesture progress drives position 1:1 (no threshold before movement starts)
+   *   · Axis lock: decide horizontal vs vertical on first significant movement
+   *   · Snap to workspace if distance > 30% vw OR velocity > 350 px/s (flick)
+   *   · Spring bounce-back when gesture is cancelled
+   *   · GNOME EASE_OUT_QUAD (280ms) for snap, spring for cancel
+   *   · No {#key} re-creation — EditorLayout stays mounted, only props update
+   *
+   * Track layout (3 slots, absolute-positioned):
+   *   [ PREV at x=-100vw ] [ CURRENT at x=0 ] [ NEXT at x=+100vw ]
+   *   translateX(trackX) shifts the whole container:
+   *     trackX < 0 → current slides left, next appears from right
+   *     trackX > 0 → current slides right, prev appears from left
+   *
+   * macOS natural scroll (default, fingers move LEFT = deltaX negative):
+   *   Swipe left → going next → accumX negative → trackX negative ✓
+   */
+
   import { onMount } from "svelte";
   import { router } from "svelte-spa-router";
   import { workspaceStore } from "../stores/workspaceStore.svelte";
@@ -8,218 +29,240 @@
 
   let { children }: { children: import("svelte").Snippet } = $props();
 
-  // ── Track state ────────────────────────────────────────────
-  // trackX: current horizontal offset of the 3-panel strip (pixels)
-  // In resting state: 0 (center panel = current workspace is visible)
-  // Dragging right-to-left (going to next): trackX goes negative
-  let trackX       = $state(0);
-  let isAnimating  = $state(false);   // true during snap animation
-  let isGesturing  = $state(false);   // true while finger is down / wheel active
+  // ── Track position ─────────────────────────────────────────
+  let trackX      = $state(0);          // translateX applied to the 3-slot container
+  let trackCss    = $state<string>("none"); // CSS transition (none while dragging)
+  let busy        = $state(false);       // locked during animated snap
+  let gestureDir  = $state<0 | 1 | -1>(0); // 0=idle 1=going-next -1=going-prev
 
-  // Which adjacent workspaces to show in the side panels
-  let prevWs = $derived(
-    workspaceStore.workspaces[workspaceStore.activeIndex - 1] ?? null
-  );
-  let nextWs = $derived(
-    workspaceStore.workspaces[workspaceStore.activeIndex + 1] ?? null
-  );
+  // Adjacent workspaces (for side panels)
+  let prevWs = $derived(workspaceStore.workspaces[workspaceStore.activeIndex - 1] ?? null);
+  let nextWs = $derived(workspaceStore.workspaces[workspaceStore.activeIndex + 1] ?? null);
 
-  // Snap easing:
-  //   · To new workspace:  ease-out  cubic-bezier(0, 0, 0.2, 1)  — Material Decelerate
-  //   · Back (cancel):     spring    cubic-bezier(0.34, 1.56, 0.64, 1) — overshoot
-  const EASE_OUT    = "cubic-bezier(0, 0, 0.2, 1)";
-  const EASE_SPRING = "cubic-bezier(0.34, 1.56, 0.64, 1)";
+  // Side panels only need to be in DOM while the user is gesturing toward them
+  let showPrev = $derived(gestureDir === -1 || trackX > 4);
+  let showNext = $derived(gestureDir ===  1 || trackX < -4);
 
-  // CSS transition string applied during snapping, null while dragging
-  let snapTransition = $state<string | null>(null);
+  // Sync router → active workspace's remembered route
+  $effect(() => { workspaceStore.updateActive({ activeRoute: router.location ?? "/" }); });
 
-  // Sync router → active workspace
-  $effect(() => {
-    const route = router.location ?? "/";
-    workspaceStore.updateActive({ activeRoute: route });
-  });
+  // ── Snap animations ────────────────────────────────────────
+  // GNOME uses EASE_OUT_QUAD ≈ cubic-bezier(0.25, 0.46, 0.45, 0.94) at ~250ms
+  // KDE uses OutCubic ≈ cubic-bezier(0.33, 1, 0.68, 1) at 300ms
+  // Spring overshoot for cancel feels satisfying (like KDE's bounce-back)
+  const DUR_SNAP   = 260;
+  const DUR_SPRING = 380;
+  const EASE_SNAP  = "cubic-bezier(0.25, 0.46, 0.45, 0.94)"; // ease-out-quad
+  const EASE_SPRING = "cubic-bezier(0.34, 1.56, 0.64, 1)";   // spring with slight overshoot
 
-  // ── Snap logic ─────────────────────────────────────────────
-  function snapTo(direction: "next" | "prev" | "back") {
-    const vw = window.innerWidth;
-    isAnimating = true;
-    isGesturing = false;
-
-    if (direction === "next") {
-      snapTransition = `transform 360ms ${EASE_OUT}`;
-      trackX = -vw;
-      setTimeout(() => {
-        // Workspace has fully slid out — now switch state
-        workspaceStore.next();
-        // Reset track instantly (no animation), new workspace is now center
-        snapTransition = null;
-        trackX = 0;
-        isAnimating = false;
-      }, 360);
-    } else if (direction === "prev") {
-      snapTransition = `transform 360ms ${EASE_OUT}`;
-      trackX = vw;
-      setTimeout(() => {
-        workspaceStore.prev();
-        snapTransition = null;
-        trackX = 0;
-        isAnimating = false;
-      }, 360);
-    } else {
-      // Snap back with spring (user cancelled)
-      snapTransition = `transform 420ms ${EASE_SPRING}`;
+  function goNext() {
+    if (busy || !nextWs) { snapBack(); return; }
+    busy = true;
+    gestureDir = 1;
+    trackCss = `transform ${DUR_SNAP}ms ${EASE_SNAP}`;
+    trackX = -window.innerWidth;
+    setTimeout(() => {
+      // Workspace state updates instantly; track resets without animation
+      workspaceStore.next();
+      trackCss = "none";
       trackX = 0;
-      setTimeout(() => {
-        snapTransition = null;
-        isAnimating = false;
-      }, 420);
-    }
+      gestureDir = 0;
+      busy = false;
+    }, DUR_SNAP);
   }
 
-  // ── Gesture helpers ─────────────────────────────────────────
-  function isHScrollable(el: EventTarget | null, delta: number): boolean {
+  function goPrev() {
+    if (busy || !prevWs) { snapBack(); return; }
+    busy = true;
+    gestureDir = -1;
+    trackCss = `transform ${DUR_SNAP}ms ${EASE_SNAP}`;
+    trackX = window.innerWidth;
+    setTimeout(() => {
+      workspaceStore.prev();
+      trackCss = "none";
+      trackX = 0;
+      gestureDir = 0;
+      busy = false;
+    }, DUR_SNAP);
+  }
+
+  function snapBack() {
+    busy = true;
+    trackCss = `transform ${DUR_SPRING}ms ${EASE_SPRING}`;
+    trackX = 0;
+    setTimeout(() => {
+      trackCss = "none";
+      gestureDir = 0;
+      busy = false;
+    }, DUR_SPRING);
+  }
+
+  // ── Gesture helpers ────────────────────────────────────────
+  /** Walk up DOM: is any ancestor scrollable horizontally with room in `dir`? */
+  function consumedByScroll(el: EventTarget | null, dir: number): boolean {
     let node = el as HTMLElement | null;
     while (node && node !== document.body) {
       const ov = window.getComputedStyle(node).overflowX;
-      if ((ov === "auto" || ov === "scroll") && node.scrollWidth > node.clientWidth) {
-        if (delta > 0 && node.scrollLeft < node.scrollWidth - node.clientWidth) return true;
-        if (delta < 0 && node.scrollLeft > 0) return true;
+      if ((ov === "auto" || ov === "scroll") && node.scrollWidth > node.clientWidth + 2) {
+        if (dir > 0 && node.scrollLeft < node.scrollWidth - node.clientWidth - 1) return true;
+        if (dir < 0 && node.scrollLeft > 1) return true;
       }
       node = node.parentElement;
     }
     return false;
   }
 
-  // ── Mount all event listeners ──────────────────────────────
+  // ── Mount event listeners ──────────────────────────────────
   onMount(() => {
-    const vw = () => window.innerWidth;
+    // ── WHEEL GESTURE (trackpad 2-finger swipe) ──────────────
+    //
+    // State machine matching GNOME's approach:
+    //   IDLE     → gather first events, decide axis
+    //   H_LOCK   → horizontal gesture in progress, apply to track 1:1
+    //   V_LOCK   → vertical scroll, pass through to browser
+    //   COOLDOWN → just completed a switch, ignore events briefly
 
-    // ── WHEEL (trackpad 2-finger swipe) ──────────────────────
-    // macOS / Windows precision trackpad: deltaX arrives as pixels
-    // Classic mouse wheel: deltaX ≈ 0 (we skip those)
-    let accumX   = 0;
-    let velX     = 0;
-    let lastTime = 0;
-    let lastAcc  = 0;
-    let wheelEnd: ReturnType<typeof setTimeout> | null = null;
-    let cooldown = false;
+    type Phase = "idle" | "h-lock" | "v-lock" | "cooldown";
+    let phase: Phase   = "idle";
+    let gx             = 0;       // accumulated horizontal delta this gesture
+    let velX           = 0;       // EMA velocity px/s
+    let lastT          = 0;       // timestamp of last wheel event
+    let wheelEndTimer: ReturnType<typeof setTimeout> | null = null;
 
-    const onWheel = (e: WheelEvent) => {
-      if (isAnimating || cooldown || workspaceStore.overviewOpen) return;
-      // Skip mouse wheel (no horizontal component) and vertical-dominant scrolls
-      if (Math.abs(e.deltaX) < Math.abs(e.deltaY) * 0.5) return;
-      if (isHScrollable(e.target, e.deltaX)) return;
-
-      const now = Date.now();
-      const dt  = now - lastTime || 16;
-      lastTime  = now;
-
-      const px = e.deltaMode === 0 ? e.deltaX
-               : e.deltaMode === 1 ? e.deltaX * 16
-               : e.deltaX * 100;
-
-      // Velocity in px/s (exponential smoothing)
-      velX  = 0.7 * velX + 0.3 * (px / dt * 1000);
-      accumX += px;
-      isGesturing = true;
-
-      // 1:1 track follows finger (with mild resistance past edge)
-      const canGoNext = nextWs !== null;
-      const canGoPrev = prevWs !== null;
-      if ((!canGoNext && accumX > 0) || (!canGoPrev && accumX < 0)) {
-        // Rubber-band: resistance 0.2 at the edges
-        trackX = -accumX * 0.18;
-      } else {
-        trackX = -accumX;
-      }
-
-      // Wheel end detection — no new event for 120ms = finger lifted
-      if (wheelEnd) clearTimeout(wheelEnd);
-      wheelEnd = setTimeout(() => {
-        isGesturing = false;
-        const SNAP_DIST = vw() * 0.32;   // 32% of screen
-        const SNAP_VEL  = 350;           // px/s
-
-        if ((accumX > SNAP_DIST || velX > SNAP_VEL) && canGoNext) {
-          cooldown = true;
-          setTimeout(() => { cooldown = false; }, 700);
-          snapTo("next");
-        } else if ((accumX < -SNAP_DIST || velX < -SNAP_VEL) && canGoPrev) {
-          cooldown = true;
-          setTimeout(() => { cooldown = false; }, 700);
-          snapTo("prev");
-        } else {
-          snapTo("back");
-        }
-        accumX = 0;
-        velX   = 0;
-      }, 120);
+    const normDelta = (e: WheelEvent, axis: "x" | "y"): number => {
+      const raw = axis === "x" ? e.deltaX : e.deltaY;
+      return e.deltaMode === 0 ? raw : e.deltaMode === 1 ? raw * 16 : raw * 100;
     };
 
-    // ── TOUCH (touchscreen devices) ───────────────────────────
-    let touchStartX = 0;
-    let touchStartY = 0;
-    let touchLastX  = 0;
-    let touchLastT  = 0;
-    let touchVelX   = 0;
-    let touchAxis: "h" | "v" | null = null; // axis lock
+    const onWheel = (e: WheelEvent) => {
+      if (workspaceStore.overviewOpen) return;
+
+      const now  = Date.now();
+      const px   = normDelta(e, "x");
+      const py   = normDelta(e, "y");
+      const prevT = lastT;
+      const dt   = Math.max(now - prevT, 4);
+      lastT = now;
+
+      // New gesture? Reset if wheel was idle for >350ms
+      if (now - prevT > 350 && phase !== "cooldown") {
+        phase = "idle";
+        gx = 0; velX = 0;
+      }
+
+      // ── Axis lock decision ───────────────────────────────
+      if (phase === "idle") {
+        const absX = Math.abs(px), absY = Math.abs(py);
+        if (absX + absY < 2) return; // too weak to decide
+        // Lock to horizontal if X dominates or is comparable to Y
+        if (absX >= absY * 0.7) {
+          if (!consumedByScroll(e.target, px)) {
+            phase = "h-lock";
+          } else {
+            phase = "v-lock";
+          }
+        } else {
+          phase = "v-lock"; // clearly vertical
+        }
+      }
+
+      if (phase === "v-lock" || phase === "cooldown" || busy) return;
+
+      // ── Apply horizontal movement ─────────────────────────
+      // macOS natural scroll ON (default): swipe LEFT → px negative → gx negative
+      // trackX = gx so track moves left (negative) → next workspace visible ✓
+      e.preventDefault(); // we own this gesture — prevent page scroll
+      gx += px;
+      velX = velX * 0.6 + (px / dt * 1000) * 0.4; // EMA velocity
+
+      gestureDir = gx < -8 ? 1 : gx > 8 ? -1 : 0;
+
+      // Rubber-band at edges (no adjacent workspace)
+      if (gx < 0 && !nextWs) {
+        trackX = gx * 0.12;
+      } else if (gx > 0 && !prevWs) {
+        trackX = gx * 0.12;
+      } else {
+        trackX = gx; // 1:1 — workspace sticks to finger
+      }
+
+      // Schedule "gesture ended" detection
+      if (wheelEndTimer) clearTimeout(wheelEndTimer);
+      wheelEndTimer = setTimeout(() => {
+        if (phase !== "h-lock") return;
+        phase = "idle";
+
+        const SNAP_DIST = window.innerWidth * 0.28; // 28% of vw (GNOME-like)
+        const SNAP_VEL  = 350;                       // px/s flick threshold
+
+        if ((gx < -SNAP_DIST || velX < -SNAP_VEL) && nextWs) {
+          phase = "cooldown";
+          setTimeout(() => { phase = "idle"; }, 600);
+          goNext();
+        } else if ((gx > SNAP_DIST || velX > SNAP_VEL) && prevWs) {
+          phase = "cooldown";
+          setTimeout(() => { phase = "idle"; }, 600);
+          goPrev();
+        } else {
+          snapBack();
+        }
+        gx = 0; velX = 0;
+      }, 80); // 80ms silence = gesture ended (tighter than before)
+    };
+
+    // ── TOUCH SWIPE ───────────────────────────────────────────
+    let tx0 = 0, ty0 = 0, txLast = 0, tLast = 0, tvX = 0;
+    type TouchAxis = null | "h" | "v";
+    let tAxis: TouchAxis = null;
 
     const onTouchStart = (e: TouchEvent) => {
-      if (isAnimating || workspaceStore.overviewOpen) return;
-      touchStartX = touchLastX = e.touches[0].clientX;
-      touchStartY = e.touches[0].clientY;
-      touchLastT  = Date.now();
-      touchVelX   = 0;
-      touchAxis   = null;
+      if (busy || workspaceStore.overviewOpen) return;
+      tx0 = txLast = e.touches[0].clientX;
+      ty0 = e.touches[0].clientY;
+      tLast = Date.now();
+      tvX = 0; tAxis = null;
     };
 
     const onTouchMove = (e: TouchEvent) => {
-      if (isAnimating || workspaceStore.overviewOpen) return;
+      if (busy || workspaceStore.overviewOpen) return;
       const cx = e.touches[0].clientX;
       const cy = e.touches[0].clientY;
-      const dx = cx - touchStartX;
-      const dy = cy - touchStartY;
-
-      // Axis lock: decide on first significant movement
-      if (!touchAxis && (Math.abs(dx) > 6 || Math.abs(dy) > 6)) {
-        touchAxis = Math.abs(dx) >= Math.abs(dy) ? "h" : "v";
-      }
-      if (touchAxis !== "h") return;
-      if (isHScrollable(e.target, dx)) return;
-
+      const dx = cx - tx0, dy = cy - ty0;
       const now = Date.now();
-      const dt  = now - touchLastT || 16;
-      touchVelX = 0.7 * touchVelX + 0.3 * ((cx - touchLastX) / dt * 1000);
-      touchLastX = cx;
-      touchLastT = now;
+      const dt = Math.max(now - tLast, 4);
 
-      isGesturing = true;
+      // Axis lock
+      if (!tAxis && (Math.abs(dx) > 5 || Math.abs(dy) > 5)) {
+        tAxis = Math.abs(dx) >= Math.abs(dy) * 0.75 ? "h" : "v";
+      }
+      if (tAxis !== "h") return;
+      if (consumedByScroll(e.target, -dx)) return; // touch: dx positive = swiping right = going prev, negate for scroll check
+      e.preventDefault(); // prevent page scroll during horizontal swipe
 
-      const canGoNext = nextWs !== null;
-      const canGoPrev = prevWs !== null;
-      // dx > 0 = swiping right = going to prev workspace
-      if ((!canGoNext && dx < 0) || (!canGoPrev && dx > 0)) {
-        trackX = dx * 0.18; // rubber-band
+      tvX = tvX * 0.6 + ((cx - txLast) / dt * 1000) * 0.4;
+      txLast = cx;
+      tLast = now;
+
+      // Touch: dx positive = finger moved right = going to PREV workspace
+      gestureDir = dx < -8 ? 1 : dx > 8 ? -1 : 0;
+      if (dx < 0 && !nextWs) {
+        trackX = dx * 0.12;
+      } else if (dx > 0 && !prevWs) {
+        trackX = dx * 0.12;
       } else {
-        trackX = dx;
+        trackX = dx; // For touch: dx same sign as visual movement (+ = right = prev)
       }
     };
 
     const onTouchEnd = (e: TouchEvent) => {
-      if (touchAxis !== "h" || workspaceStore.overviewOpen) return;
-      isGesturing = false;
-
-      const dx = e.changedTouches[0].clientX - touchStartX;
-      const SNAP_DIST = vw() * 0.32;
-      const SNAP_VEL  = 350;
-
-      if ((dx < -SNAP_DIST || touchVelX < -SNAP_VEL) && nextWs !== null) {
-        snapTo("next");
-      } else if ((dx > SNAP_DIST || touchVelX > SNAP_VEL) && prevWs !== null) {
-        snapTo("prev");
-      } else {
-        snapTo("back");
-      }
+      if (tAxis !== "h" || workspaceStore.overviewOpen) return;
+      const dx  = e.changedTouches[0].clientX - tx0;
+      const SD  = window.innerWidth * 0.28;
+      const SV  = 350;
+      if ((dx < -SD || tvX < -SV) && nextWs)      goNext();
+      else if ((dx >  SD || tvX >  SV) && prevWs) goPrev();
+      else                                          snapBack();
+      tAxis = null;
     };
 
     // ── KEYBOARD ──────────────────────────────────────────────
@@ -227,20 +270,20 @@
       const t = e.target as HTMLElement;
       if (t instanceof HTMLInputElement || t instanceof HTMLTextAreaElement || t.isContentEditable) return;
 
-      const ca = e.ctrlKey && e.altKey  && !e.shiftKey && !e.metaKey;
-      const cs = e.ctrlKey && e.shiftKey && !e.altKey  && !e.metaKey;
+      const ca  = e.ctrlKey && e.altKey   && !e.shiftKey && !e.metaKey;
+      const cs  = e.ctrlKey && e.shiftKey && !e.altKey   && !e.metaKey;
       const esc = e.key === "Escape" && !e.ctrlKey && !e.altKey && !e.shiftKey && !e.metaKey;
 
-      if (ca && e.key === "ArrowRight") { e.preventDefault(); workspaceStore.next(); }
-      if (ca && e.key === "ArrowLeft")  { e.preventDefault(); workspaceStore.prev(); }
-      if (ca && (e.key === "n" || e.key === "N")) { e.preventDefault(); workspaceStore.addWorkspace(); }
-      if (cs && e.key === "`")          { e.preventDefault(); workspaceStore.toggleOverview(); }
-      if (esc && workspaceStore.overviewOpen) { e.preventDefault(); workspaceStore.toggleOverview(); }
+      if (ca && e.key === "ArrowRight")             { e.preventDefault(); goNext(); }
+      else if (ca && e.key === "ArrowLeft")         { e.preventDefault(); goPrev(); }
+      else if (ca && (e.key === "n" || e.key === "N")) { e.preventDefault(); workspaceStore.addWorkspace(); }
+      else if (cs && e.key === "`")                 { e.preventDefault(); workspaceStore.toggleOverview(); }
+      else if (esc && workspaceStore.overviewOpen)  { e.preventDefault(); workspaceStore.toggleOverview(); }
     };
 
-    window.addEventListener("wheel",      onWheel,      { passive: true });
+    window.addEventListener("wheel",      onWheel,      { passive: false }); // passive:false so we can preventDefault during h-lock
     window.addEventListener("touchstart", onTouchStart, { passive: true });
-    window.addEventListener("touchmove",  onTouchMove,  { passive: true });
+    window.addEventListener("touchmove",  onTouchMove,  { passive: false }); // passive:false so we can preventDefault during h-swipe
     window.addEventListener("touchend",   onTouchEnd,   { passive: true });
     window.addEventListener("keydown",    onKeydown);
 
@@ -250,81 +293,64 @@
       window.removeEventListener("touchmove",  onTouchMove);
       window.removeEventListener("touchend",   onTouchEnd);
       window.removeEventListener("keydown",    onKeydown);
-      if (wheelEnd) clearTimeout(wheelEnd);
+      if (wheelEndTimer) clearTimeout(wheelEndTimer);
     };
   });
-
-  // Keyboard/button switches: use {#key} slide animation (not the track)
-  // These bypass the gesture track and go straight to the {#key} animation
 </script>
 
-<!-- ── Viewport ──────────────────────────────────────────────── -->
+<!-- ── Viewport (overflow:hidden clips the 3 panels) ────────── -->
 <div class="ws-viewport">
 
   <!--
-    3-panel track: [ prev | current | next ]
-    Each panel is 100vw wide, positioned at -100vw, 0, +100vw.
-    trackX moves the whole strip:
-      · Negative trackX → current slides left → next workspace comes in
-      · Positive trackX → current slides right → prev workspace comes in
-
-    During snapping: CSS transition is applied.
-    During dragging: no transition (instant 1:1 tracking).
-    When not gesturing AND not animating: trackX === 0, no overhead.
+    3-slot container. trackX drives all transitions.
+    Slots are absolute-positioned relative to this container:
+      prev  → left: -100vw
+      current → left: 0
+      next  → left: +100vw
+    translateX(trackX) shifts everything together.
   -->
   <div
-    class="ws-track"
+    class="ws-container"
     style:transform="translateX({trackX}px)"
-    style:transition={snapTransition ?? "none"}
-    style:will-change={isGesturing || isAnimating ? "transform" : "auto"}
+    style:transition={trackCss}
+    style:will-change={busy || gestureDir !== 0 ? "transform" : "auto"}
   >
-    <!-- PREV panel (left side, -100vw) -->
-    <div class="ws-track__slot ws-track__slot--prev">
-      {#if prevWs}
+    <!-- PREV slot -->
+    <div class="ws-slot ws-slot--prev">
+      {#if showPrev && prevWs}
         <WorkspacePreviewFull ws={prevWs} />
-      {:else}
-        <!-- Edge: no prev workspace — show a subtle "no more" hint -->
-        <div class="ws-track__edge ws-track__edge--prev">
-          <span>← First workspace</span>
-        </div>
+      {:else if showPrev}
+        <div class="ws-edge">← First workspace</div>
       {/if}
     </div>
 
-    <!-- CURRENT panel (center, 0) — always the live EditorLayout -->
-    <div class="ws-track__slot ws-track__slot--current">
-      {#key workspaceStore.transitionKey}
-        <div
-          class="ws-slide"
-          class:ws-slide--enter-right={!isGesturing && !isAnimating && workspaceStore.slideDirection === 1}
-          class:ws-slide--enter-left={!isGesturing && !isAnimating && workspaceStore.slideDirection === -1}
-        >
-          <EditorLayout
-            ws={workspaceStore.active}
-            onUpdate={(patch) => workspaceStore.updateActive(patch)}
-            onOpenOverview={() => workspaceStore.toggleOverview()}
-          >
-            {@render children()}
-          </EditorLayout>
-        </div>
-      {/key}
+    <!-- CURRENT slot — always live, no {#key} re-creation -->
+    <div class="ws-slot ws-slot--current">
+      <EditorLayout
+        ws={workspaceStore.active}
+        onUpdate={(patch) => workspaceStore.updateActive(patch)}
+        onOpenOverview={() => workspaceStore.toggleOverview()}
+      >
+        {@render children()}
+      </EditorLayout>
     </div>
 
-    <!-- NEXT panel (right side, +100vw) -->
-    <div class="ws-track__slot ws-track__slot--next">
-      {#if nextWs}
+    <!-- NEXT slot -->
+    <div class="ws-slot ws-slot--next">
+      {#if showNext && nextWs}
         <WorkspacePreviewFull ws={nextWs} />
-      {:else}
-        <!-- Edge: no next workspace — rubber-band hint -->
-        <div class="ws-track__edge ws-track__edge--next">
-          <span>Last workspace →</span>
-        </div>
+      {:else if showNext}
+        <div class="ws-edge">Last workspace →</div>
       {/if}
     </div>
   </div>
 
-  <!-- Gesture progress indicator dots (bottom center) -->
+  <!-- Position indicator dots — appear during gesture / transition -->
   {#if workspaceStore.workspaces.length > 1}
-    <div class="ws-dots" class:ws-dots--visible={isGesturing || isAnimating}>
+    <div
+      class="ws-dots"
+      class:ws-dots--visible={gestureDir !== 0 || busy}
+    >
       {#each workspaceStore.workspaces as _, i}
         <div
           class="ws-dot"
@@ -333,41 +359,36 @@
       {/each}
     </div>
   {/if}
-
 </div>
 
-<!-- Workspace overview overlay -->
+<!-- Overview overlay -->
 {#if workspaceStore.overviewOpen}
   <WorkspaceOverview />
 {/if}
 
 <style>
-  /* 3-panel track */
-  .ws-track {
+  /* 3-slot container fills the viewport; slots hang off the sides */
+  .ws-container {
+    position: absolute;
+    inset: 0;
+  }
+
+  .ws-slot {
     position: absolute;
     top: 0;
-    left: 0;
-    /* Wide enough to hold prev + current + next */
-    width: 300vw;
-    height: 100vh;
-    display: flex;
-    /* Shift left by 100vw so "current" (the middle slot) aligns with viewport */
-    margin-left: -100vw;
-  }
-
-  .ws-track__slot {
     width: 100vw;
     height: 100vh;
-    flex-shrink: 0;
-    position: relative;
     overflow: hidden;
   }
+  .ws-slot--prev    { left: -100vw; }
+  .ws-slot--current { left: 0; }
+  .ws-slot--next    { left:  100vw; }
 
-  /* Edge plates (shown when no prev/next workspace exists) */
-  .ws-track__edge {
+  /* Edge plates */
+  .ws-edge {
     width: 100%;
     height: 100%;
-    background: #1e1f21;
+    background: #1a1b1d;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -379,29 +400,28 @@
   /* Progress dots */
   .ws-dots {
     position: fixed;
-    bottom: 48px;
+    bottom: 50px;
     left: 50%;
     transform: translateX(-50%);
     display: flex;
-    gap: 6px;
+    gap: 7px;
     align-items: center;
-    z-index: 50;
+    z-index: 100;
     pointer-events: none;
     opacity: 0;
-    transition: opacity 200ms ease;
+    transition: opacity 180ms ease;
   }
-  .ws-dots--visible {
-    opacity: 1;
-  }
+  .ws-dots--visible { opacity: 1; }
+
   .ws-dot {
     width: 6px;
     height: 6px;
     border-radius: 50%;
-    background: rgba(255, 255, 255, 0.3);
-    transition: background 200ms ease, transform 200ms ease;
+    background: rgba(255, 255, 255, 0.28);
+    transition: background 150ms ease, transform 150ms ease;
   }
   .ws-dot--active {
-    background: rgba(255, 255, 255, 0.85);
-    transform: scale(1.3);
+    background: rgba(255, 255, 255, 0.88);
+    transform: scale(1.35);
   }
 </style>
