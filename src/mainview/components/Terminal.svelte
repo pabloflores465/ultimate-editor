@@ -29,7 +29,7 @@
     term = new Terminal({
       cursorBlink: true,
       fontSize: 13,
-      lineHeight: 1.0,
+      lineHeight: 1,
       letterSpacing: 0,
       fontFamily: '"JetBrains Mono", "Cascadia Code", "Fira Code", monospace',
       allowProposedApi: true,
@@ -56,6 +56,12 @@
     // onMount corre, así que getBoundingClientRect() ya devuelve las
     // dimensiones finales del contenedor flex.
     fitAddon.fit();
+
+    // DEBUG: ver dimensiones reales
+    const rect = containerEl.getBoundingClientRect();
+    console.log(`[Terminal] container: ${rect.width}x${rect.height}px`);
+    console.log(`[Terminal] grid: ${term.cols}cols x ${term.rows}rows`);
+    console.log(`[Terminal] cellHeight: ${(rect.height / term.rows).toFixed(1)}px`);
 
     // Primera llamada a onResize → terminal:resize RPC → spawnShell() con
     // el tamaño correcto. El output del shell se bufferiza hasta que
@@ -132,8 +138,8 @@
   :global(.terminal-host .xterm-viewport) {
     overflow-y: auto !important;
   }
-  /* Eliminar cualquier line-height extra que inyecte el navegador */
+  /* Forzar line-height compacto — sin espacio extra entre líneas */
   :global(.terminal-host .xterm-rows) {
-    line-height: normal;
+    line-height: 1 !important;
   }
 </style>

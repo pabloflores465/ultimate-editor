@@ -8,9 +8,17 @@
 		"dev": "electrobun dev --watch",
 		"dev:hmr": "concurrently \"bun run hmr\" \"bun run start\"",
 		"hmr": "vite --port 5173",
-		"build:canary": "vite build && electrobun build --env=canary"
+		"build:canary": "vite build && electrobun build --env=canary",
+		"postinstall": "bash scripts/patch-xterm.sh"
 	},
 	"dependencies": {
+		"@codemirror/lang-css": "^6.3.1",
+		"@codemirror/lang-html": "^6.4.11",
+		"@codemirror/lang-javascript": "^6.2.5",
+		"@codemirror/lang-json": "^6.0.2",
+		"@xterm/addon-fit": "^0.11.0",
+		"@xterm/xterm": "^6.0.0",
+		"codemirror": "^6.0.2",
 		"electrobun": "1.16.0",
 		"svelte-spa-router": "^5.0.0"
 	},

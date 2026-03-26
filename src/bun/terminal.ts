@@ -55,7 +55,21 @@ function ensureZdotdir(): string {
   ].join("\n");
 
   writeFileSync(join(dir, ".zshenv"), wrapFile(".zshenv") + "\n");
-  writeFileSync(join(dir, ".zshrc"), wrapFile(".zshrc") + "\n");
+
+  // .zshrc: source user config, then disable PROMPT_SP (removes the '%'
+  // marker that zsh prints for partial lines) and clear the screen so the
+  // first prompt appears cleanly at row 0 with no gaps.
+  const zshrcContent = [
+    wrapFile(".zshrc"),
+    // Disable p10k instant prompt to avoid alternate-screen conflicts
+    `unset POWERLEVEL9K_INSTANT_PROMPT`,
+    `typeset -g POWERLEVEL9K_INSTANT_PROMPT=off 2>/dev/null`,
+    // Remove the '%' partial-line marker
+    `unsetopt PROMPT_SP 2>/dev/null`,
+    // Clear screen after all init so first prompt starts at row 0
+    `clear`,
+  ].join("\n");
+  writeFileSync(join(dir, ".zshrc"), zshrcContent + "\n");
 
   // Starship config override
   const userStarship = join(homedir(), ".config", "starship.toml");
@@ -68,7 +82,7 @@ function ensureZdotdir(): string {
   }
   writeFileSync(
     join(dir, "starship.toml"),
-    `add_newline = true\n${starshipContent}`,
+    `add_newline = false\n${starshipContent}`,
   );
 
   return dir;
