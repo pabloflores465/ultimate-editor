@@ -709,40 +709,47 @@
             <!-- Panel body -->
             <div class="flex-1 flex flex-col min-h-0 overflow-hidden">
 
-              {#if ws.activeBottom === "terminal"}
-                <!-- svelte-ignore a11y_click_events_have_key_events -->
-                <!-- svelte-ignore a11y_no_static_element_interactions -->
-                <div
-                  class="flex flex-col h-full"
-                  class:fixed={termFullscreen}
-                  class:inset-0={termFullscreen}
-                  class:z-50={termFullscreen}
-                  class:bg-jb-bg={termFullscreen}
-                >
-                  <!-- Tab bar -->
-                  <div class="flex items-center bg-jb-panel h-[26px] border-b border-jb-border flex-shrink-0 px-2 gap-1 text-[11px]">
-                    <span class="text-jb-text font-medium border-b border-jb-blue pb-px px-1">Local</span>
-                    <span class="text-jb-muted ml-1">— zsh</span>
-                    <button class="ml-auto bg-transparent border-none text-jb-muted cursor-pointer hover:text-jb-text px-1 text-[13px]">＋</button>
-                    <button
-                      title={termFullscreen ? "Restore" : "Fullscreen"}
-                      onclick={() => (termFullscreen = !termFullscreen)}
-                      class="bg-transparent border-none text-jb-muted cursor-pointer hover:text-jb-text px-1 text-[12px]"
-                    >{termFullscreen ? "⊟" : "⤢"}</button>
-                  </div>
-
-                  <!-- xterm.js terminal -->
-                  <div class="flex-1 min-h-0 overflow-hidden">
-                    <Terminal
-                      bind:fullscreen={termFullscreen}
-                      onInput={sendTermInput}
-                      onResize={sendTermResize}
-                      onMounted={(fn) => { termWriteFn = fn; sendTermReady(); }}
-                    />
-                  </div>
+              <!--
+                Terminal: ALWAYS mounted so the PTY session and xterm.js
+                instance survive tab switches.  We hide/show with CSS only
+                (display:none ↔ display:flex) so the component never unmounts.
+                The ResizeObserver inside Terminal.svelte fires when the
+                container returns to display:flex and re-fits xterm automatically.
+              -->
+              <!-- svelte-ignore a11y_click_events_have_key_events -->
+              <!-- svelte-ignore a11y_no_static_element_interactions -->
+              <div
+                class="flex flex-col h-full"
+                class:hidden={ws.activeBottom !== "terminal" && !termFullscreen}
+                class:fixed={termFullscreen}
+                class:inset-0={termFullscreen}
+                class:z-50={termFullscreen}
+                class:bg-jb-bg={termFullscreen}
+              >
+                <!-- Tab bar -->
+                <div class="flex items-center bg-jb-panel h-[26px] border-b border-jb-border flex-shrink-0 px-2 gap-1 text-[11px]">
+                  <span class="text-jb-text font-medium border-b border-jb-blue pb-px px-1">Local</span>
+                  <span class="text-jb-muted ml-1">— zsh</span>
+                  <button class="ml-auto bg-transparent border-none text-jb-muted cursor-pointer hover:text-jb-text px-1 text-[13px]">＋</button>
+                  <button
+                    title={termFullscreen ? "Restore" : "Fullscreen"}
+                    onclick={() => (termFullscreen = !termFullscreen)}
+                    class="bg-transparent border-none text-jb-muted cursor-pointer hover:text-jb-text px-1 text-[12px]"
+                  >{termFullscreen ? "⊟" : "⤢"}</button>
                 </div>
 
-              {:else if ws.activeBottom === "problems"}
+                <!-- xterm.js terminal -->
+                <div class="flex-1 min-h-0 overflow-hidden">
+                  <Terminal
+                    bind:fullscreen={termFullscreen}
+                    onInput={sendTermInput}
+                    onResize={sendTermResize}
+                    onMounted={(fn) => { termWriteFn = fn; sendTermReady(); }}
+                  />
+                </div>
+              </div>
+
+              {#if ws.activeBottom === "problems"}
                 <div class="flex-1 flex flex-col min-h-0 overflow-hidden">
                   <div class="flex items-center bg-jb-panel h-[26px] border-b border-jb-border flex-shrink-0 px-3 gap-2 text-[11px] text-jb-muted">
                     <span>Scope: Current File</span>
@@ -781,7 +788,7 @@
                   </div>
                 </div>
 
-              {:else}
+              {:else if ws.activeBottom !== "terminal"}
                 <div class="flex items-center justify-center h-full text-jb-muted text-[12px]">No services configured.</div>
               {/if}
 
