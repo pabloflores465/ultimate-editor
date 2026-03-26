@@ -22,11 +22,50 @@
  */
 
 import { dlopen, FFIType, ptr } from "bun:ffi";
-import { read, writeSync, closeSync } from "node:fs";
+import { read, writeSync, closeSync, mkdirSync, writeFileSync } from "node:fs";
 import { spawn as nodeSpawn } from "node:child_process";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
 
 // ── Constantes ioctl en macOS ─────────────────────────────────────────────────
 const TIOCSWINSZ = 0x80087467n;
+
+// ── ZDOTDIR wrapper ───────────────────────────────────────────────────────────
+// Crea un directorio temporal con un .zshrc y .zshenv que:
+//   1. Deshacen ZDOTDIR temporalmente para que zsh cargue el ~/.zshrc del usuario
+//   2. Vuelven a poner ZDOTDIR (por si el usuario lo usa)
+//   3. Sobreescriben PROMPT_ADD_NEWLINE=false DESPUÉS de que el tema se haya cargado
+//
+// Esto evita que oh-my-zsh / powerlevel10k sobreescriban la variable.
+function ensureZdotdir(): string {
+  const dir = join(tmpdir(), `ult-zsh-${process.env.USER ?? "user"}`);
+  mkdirSync(dir, { recursive: true });
+
+  // Genera un wrapper que desactiva ZDOTDIR → source original → restaura ZDOTDIR
+  const wrapFile = (file: string): string => [
+    `_ue_saved_zdotdir="\${ZDOTDIR}"`,
+    `unset ZDOTDIR`,
+    `[ -f "\${HOME}/${file}" ] && source "\${HOME}/${file}"`,
+    `export ZDOTDIR="\${_ue_saved_zdotdir}"`,
+    `unset _ue_saved_zdotdir`,
+  ].join("\n");
+
+  writeFileSync(join(dir, ".zshenv"), wrapFile(".zshenv") + "\n");
+  writeFileSync(
+    join(dir, ".zshrc"),
+    [
+      wrapFile(".zshrc"),
+      "",
+      "# Ultimate Editor: suppress blank lines added by themes",
+      "PROMPT_ADD_NEWLINE=false",
+      "POWERLEVEL9K_PROMPT_ADD_NEWLINE=false",
+      "SPACESHIP_PROMPT_ADD_NEWLINE=false",
+      "precmd_functions=(${precmd_functions[@]//add-zsh-hook precmd _p9k_precmd_hook})",
+    ].join("\n") + "\n",
+  );
+
+  return dir;
+}
 
 // ── FFI: openpty + ioctl ──────────────────────────────────────────────────────
 const { symbols: { openpty, ioctl } } = dlopen("libSystem.B.dylib", {
@@ -70,6 +109,8 @@ export function initPty(send: (b64: string) => void): void {
 
   setWinSize(masterFd, 80, 24);
 
+  const zdotdir = ensureZdotdir();
+
   // Spawn zsh con slave PTY como stdin/stdout/stderr.
   // child_process.spawn acepta números de fd en stdio[].
   nodeSpawn("/bin/zsh", ["-i"], {
@@ -81,8 +122,9 @@ export function initPty(send: (b64: string) => void): void {
       COLORTERM:           "truecolor",
       FORCE_COLOR:         "3",
       CLICOLOR_FORCE:      "1",
-      // Desactiva la línea en blanco antes del prompt que añaden
-      // oh-my-zsh y powerlevel10k por defecto
+      // ZDOTDIR hace que zsh cargue nuestros wrappers en lugar de ~/.zshrc
+      // Los wrappers sourcean el original y luego sobreescriben las vars de spacing
+      ZDOTDIR:             zdotdir,
       PROMPT_ADD_NEWLINE:  "false",
       POWERLEVEL9K_PROMPT_ADD_NEWLINE: "false",
     },
