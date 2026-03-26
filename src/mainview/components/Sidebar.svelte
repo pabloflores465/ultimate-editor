@@ -19,6 +19,7 @@
     activeTabPath = "",
     onClose,
     onFileOpen,
+    onProjectChange,
   }: {
     expandedFolders: Record<string, boolean>;
     onToggleFolder: (key: string) => void;
@@ -26,6 +27,7 @@
     activeTabPath?: string;
     onClose: () => void;
     onFileOpen?: (path: string, name: string, icon: string, content: string) => void;
+    onProjectChange?: (hasProject: boolean) => void;
   } = $props();
 
   // ── Internal state ───────────────────────────────────────────
@@ -139,6 +141,7 @@
     const files = input.files;
     rootName = files[0].webkitRelativePath.split("/")[0];
     fileNodes = buildTree(files);
+    onProjectChange?.(true);
 
     // Reset the input so the same folder can be re-opened
     input.value = "";

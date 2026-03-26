@@ -26,6 +26,7 @@
   let resizingBottom = $state(false);
   let runConfigOpen  = $state(false);
   let hamburgerOpen  = $state(false);
+  let hasProject     = $state(false);
 
   // (file tree is now managed by Sidebar.svelte)
 
@@ -444,6 +445,7 @@
             onFileOpen={(path, name, icon, content) =>
               workspaceStore.openFile(path, name, icon, content)
             }
+            onProjectChange={(v) => (hasProject = v)}
           />
 
         {:else}
@@ -639,60 +641,19 @@
                 onSave={saveCurrentFile}
               />
             {/key}
+          {:else if hasProject}
+            <!-- ── Project open, no file selected: plain dark background ── -->
+            <div class="flex-1 bg-jb-bg"></div>
+
           {:else}
-            <!-- ── No file open: show page children + decorative gutter ── -->
-            <!-- Gutter: decorative line numbers for the page content -->
-            <div
-              aria-hidden="true"
-              class="flex-shrink-0 bg-jb-bg border-r border-jb-border2 select-none overflow-hidden flex"
-            >
-              <div class="w-[14px] bg-jb-bg flex flex-col pt-2">
-                {#each {length: 60} as _, i}
-                  <div class="h-[20.8px] flex items-center justify-center">
-                    {#if i === 1 || i === 4}
-                      <span class="w-2.5 h-2.5 rounded-full bg-[#ff6b68] inline-block"></span>
-                    {/if}
-                  </div>
-                {/each}
-              </div>
-              <div class="w-[38px] text-right pr-2 pt-2 text-[12px] font-mono text-jb-dim leading-[1.6]">
-                {#each {length: 60} as _, i}
-                  <div class="h-[20.8px]">{i + 1}</div>
-                {/each}
-              </div>
-              <div class="w-[3px] flex flex-col pt-2">
-                {#each {length: 60} as _, i}
-                  <div class="h-[20.8px]">
-                    {#if i >= 2 && i <= 5}
-                      <div class="h-full bg-[#629755] w-full opacity-80"></div>
-                    {:else if i === 9}
-                      <div class="h-full bg-[#ffc66d] w-full opacity-80"></div>
-                    {/if}
-                  </div>
-                {/each}
-              </div>
-              <div class="w-[14px] flex flex-col pt-2 text-jb-dim text-[10px]">
-                {#each {length: 60} as _, i}
-                  <div class="h-[20.8px] flex items-center justify-center cursor-pointer hover:text-jb-text">
-                    {#if i === 0 || i === 7 || i === 20}
-                      <span>−</span>
-                    {/if}
-                  </div>
-                {/each}
-              </div>
-            </div>
-
-            <!-- Page content (router) -->
-            <div class="flex-1 overflow-auto p-2 pl-3 text-[13px] leading-relaxed select-text font-[inherit]">
-              {@render children()}
-            </div>
-
-            <!-- Right error stripe -->
-            <div class="w-[14px] bg-jb-panel flex-shrink-0 flex flex-col border-l border-jb-border relative">
-              {#each [{pct: 12, c:"#629755"},{pct: 45, c:"#ffc66d"},{pct: 70, c:"#ff6b68"}] as mark}
-                <div class="absolute w-full h-[3px] rounded-sm" style="top:{mark.pct}%; background:{mark.c}; opacity:0.7"></div>
-              {/each}
-              <div class="absolute top-[8%] w-full h-[5%] bg-[#4e9ede] opacity-40 rounded-sm"></div>
+            <!-- ── No project open: empty state message ── -->
+            <div class="flex-1 bg-jb-bg flex flex-col items-center justify-center gap-4 select-none pointer-events-none">
+              <!-- Folder icon -->
+              <svg viewBox="0 0 48 48" width="52" height="52" fill="none" stroke="#4c5052" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="opacity-60">
+                <path d="M6 10h12l4 5h20a3 3 0 0 1 3 3v18a3 3 0 0 1-3 3H6a3 3 0 0 1-3-3V13a3 3 0 0 1 3-3z"/>
+              </svg>
+              <p class="text-[14px] font-medium" style="color:#5a5d5f">No project open</p>
+              <p class="text-[12px]" style="color:#46494a">Open a project or file to start editing</p>
             </div>
           {/if}
 
