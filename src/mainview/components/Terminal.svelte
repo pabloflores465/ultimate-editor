@@ -133,7 +133,7 @@
   /* xterm.js internal layout fixes */
   :global(.terminal-host .xterm) {
     height: 100%;
-    padding: 2px 6px;
+    padding: 0;
   }
   :global(.terminal-host .xterm-viewport) {
     overflow-y: auto !important;
