@@ -883,11 +883,9 @@
                   </div>
                 </div>
 
-                <!-- ── Pane area: split or single ── -->
+                <!-- ── Pane area: always flex so flex-1 children get proper height ── -->
                 <div
-                  class="flex-1 min-h-0 overflow-hidden"
-                  class:flex={splitPane !== null}
-                  class:flex-row={splitPane !== null && splitDir === "vertical"}
+                  class="flex-1 min-h-0 overflow-hidden flex"
                   class:flex-col={splitPane !== null && splitDir === "horizontal"}
                 >
                   <!-- All tab panes: always in DOM, switch via visibility -->
