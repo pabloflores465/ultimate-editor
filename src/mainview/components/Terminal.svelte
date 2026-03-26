@@ -137,10 +137,7 @@
   }
   :global(.terminal-host .xterm-viewport) {
     overflow-y: auto !important;
-  }
-  /* Extend the screen background to fill any leftover space below the last row */
-  :global(.terminal-host .xterm-screen) {
-    min-height: 100%;
+    background-color: #1e1f22 !important;
   }
   /* Forzar line-height compacto — sin espacio extra entre líneas */
   :global(.terminal-host .xterm-rows) {
