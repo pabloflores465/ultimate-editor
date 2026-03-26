@@ -142,7 +142,6 @@
       messages: {
         "terminal:input": { data: string; workspaceId: string };
         "terminal:resize": { cols: number; rows: number; workspaceId: string };
-        /** Notifica al proceso Bun que el terminal está listo para recibir output */
         "terminal:ready": { workspaceId: string };
       };
     };
@@ -158,16 +157,35 @@
     };
   };
 
-  let termWriteFn: ((b64: string) => void) | null = null;
-  let termFullscreen = $state(false);
+  // ── Multi-terminal state ──────────────────────────────────────────────────
+  interface TermPane {
+    id: string;
+    label: string;
+    writeFn: ((b64: string) => void) | null;
+  }
+
+  let termCounter = 0;
+  function newTermId() { return `${ws.id}_t${termCounter++}`; }
+
+  const _initId = newTermId();
+  let termTabs  = $state<TermPane[]>([{ id: _initId, label: "zsh", writeFn: null }]);
+  let activeTermId = $state(_initId);
+
+  // Split pane: shown alongside the active tab
+  let splitPane = $state<TermPane | null>(null);
+  let splitDir  = $state<"vertical" | "horizontal">("vertical");
+
+  // Bottom panel maximize
+  let bottomMaximized = $state(false);
+  let termFullscreen  = $state(false);
 
   const termRpc = Electroview.defineRPC<AppSchema>({
     handlers: {
       messages: {
-        "terminal:output": ({ data, workspaceId }) => {
-          if (workspaceId === ws.id) {
-            termWriteFn?.(data);
-          }
+        "terminal:output": ({ data, workspaceId: termId }) => {
+          const tab = termTabs.find(t => t.id === termId);
+          if (tab?.writeFn) { tab.writeFn(data); return; }
+          if (splitPane?.id === termId) splitPane.writeFn?.(data);
         },
         "menu:open-settings": () => { /* TODO */ },
         "menu:new-file":      () => { /* TODO */ },
@@ -179,16 +197,71 @@
 
   new Electroview({ rpc: termRpc });
 
-  function sendTermInput(b64: string) {
-    termRpc.send["terminal:input"]({ data: b64, workspaceId: ws.id });
+  // ── Per-terminal RPC helpers ──────────────────────────────────────────────
+  function makeTermInput(termId: string) {
+    return (b64: string) =>
+      termRpc.send["terminal:input"]({ data: b64, workspaceId: termId });
+  }
+  function makeTermResize(termId: string) {
+    return (cols: number, rows: number) =>
+      termRpc.send["terminal:resize"]({ cols, rows, workspaceId: termId });
+  }
+  function makeTermMounted(pane: TermPane) {
+    return (writeFn: (b64: string) => void) => {
+      pane.writeFn = writeFn;
+      termRpc.send["terminal:ready"]({ workspaceId: pane.id });
+    };
   }
 
-  function sendTermResize(cols: number, rows: number) {
-    termRpc.send["terminal:resize"]({ cols, rows, workspaceId: ws.id });
+  // ── Terminal tab management ───────────────────────────────────────────────
+  function addTermTab() {
+    const id = newTermId();
+    const pane: TermPane = { id, label: "zsh", writeFn: null };
+    termTabs = [...termTabs, pane];
+    activeTermId = id;
   }
 
-  function sendTermReady() {
-    termRpc.send["terminal:ready"]({ workspaceId: ws.id });
+  function closeTermTab(id: string) {
+    const idx = termTabs.findIndex(t => t.id === id);
+    if (idx < 0) return;
+    const next = termTabs.filter(t => t.id !== id);
+    if (next.length === 0) {
+      onUpdate({ bottomPanelOpen: false });
+      return;
+    }
+    termTabs = next;
+    if (activeTermId === id) {
+      activeTermId = next[Math.max(0, idx - 1)].id;
+    }
+  }
+
+  // ── Split management ──────────────────────────────────────────────────────
+  function doSplit(dir: "vertical" | "horizontal") {
+    if (splitPane !== null && splitDir === dir) {
+      // Same direction → close split
+      splitPane = null;
+      return;
+    }
+    if (splitPane === null) {
+      // Create new split terminal
+      const id = newTermId();
+      splitPane = { id, label: "zsh", writeFn: null };
+    }
+    splitDir = dir;
+  }
+
+  function closeSplit() {
+    splitPane = null;
+  }
+
+  // ── Panel maximize ────────────────────────────────────────────────────────
+  function togglePanelMaximize() {
+    bottomMaximized = !bottomMaximized;
+  }
+
+  function restorePanelSize() {
+    bottomMaximized = false;
+    onUpdate({ bottomHeight: 200 });
   }
 </script>
 
@@ -679,8 +752,10 @@
         <!-- Bottom panel content -->
         {#if ws.bottomPanelOpen}
           <div
-            class="bg-jb-bg border-t border-jb-border flex flex-col flex-shrink-0 overflow-hidden"
-            style:height="{ws.bottomHeight}px"
+            class="bg-jb-bg border-t border-jb-border flex flex-col overflow-hidden"
+            class:flex-1={bottomMaximized}
+            class:flex-shrink-0={!bottomMaximized}
+            style:height={bottomMaximized ? undefined : `${ws.bottomHeight}px`}
           >
             <!-- Panel tab bar -->
             <div class="flex items-center bg-jb-panel2 h-[30px] flex-shrink-0 border-b border-jb-border px-1 gap-0">
@@ -700,9 +775,17 @@
                 </button>
               {/each}
               <div class="flex-1"></div>
-              <button title="Maximize" class="w-6 h-6 flex items-center justify-center rounded text-jb-muted hover:bg-jb-hover hover:text-jb-text bg-transparent border-none cursor-pointer text-[11px]">⤢</button>
-              <button title="Restore layout" class="w-6 h-6 flex items-center justify-center rounded text-jb-muted hover:bg-jb-hover hover:text-jb-text bg-transparent border-none cursor-pointer text-[11px]">⊟</button>
-              <button title="Close" onclick={() => onUpdate({ bottomPanelOpen: false })}
+              <button
+                title={bottomMaximized ? "Restore size" : "Maximize panel"}
+                onclick={togglePanelMaximize}
+                class="w-6 h-6 flex items-center justify-center rounded text-jb-muted hover:bg-jb-hover hover:text-jb-text bg-transparent border-none cursor-pointer text-[11px]"
+              >{bottomMaximized ? "⊡" : "⤢"}</button>
+              <button
+                title="Restore default size"
+                onclick={restorePanelSize}
+                class="w-6 h-6 flex items-center justify-center rounded text-jb-muted hover:bg-jb-hover hover:text-jb-text bg-transparent border-none cursor-pointer text-[11px]"
+              >⊟</button>
+              <button title="Close panel" onclick={() => onUpdate({ bottomPanelOpen: false })}
                 class="w-6 h-6 flex items-center justify-center rounded text-jb-muted hover:bg-jb-hover hover:text-jb-text bg-transparent border-none cursor-pointer text-[11px]">✕</button>
             </div>
 
@@ -710,11 +793,9 @@
             <div class="flex-1 flex flex-col min-h-0 overflow-hidden">
 
               <!--
-                Terminal: ALWAYS mounted so the PTY session and xterm.js
-                instance survive tab switches.  We hide/show with CSS only
-                (display:none ↔ display:flex) so the component never unmounts.
-                The ResizeObserver inside Terminal.svelte fires when the
-                container returns to display:flex and re-fits xterm automatically.
+                Terminal: ALWAYS mounted so PTY sessions survive tab switches.
+                Hidden via CSS only (display:none) when another bottom tab is active.
+                Tabs use absolute+inset-0+invisible so xterm always has correct size.
               -->
               <!-- svelte-ignore a11y_click_events_have_key_events -->
               <!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -726,26 +807,124 @@
                 class:z-50={termFullscreen}
                 class:bg-jb-bg={termFullscreen}
               >
-                <!-- Tab bar -->
-                <div class="flex items-center bg-jb-panel h-[26px] border-b border-jb-border flex-shrink-0 px-2 gap-1 text-[11px]">
-                  <span class="text-jb-text font-medium border-b border-jb-blue pb-px px-1">Local</span>
-                  <span class="text-jb-muted ml-1">— zsh</span>
-                  <button class="ml-auto bg-transparent border-none text-jb-muted cursor-pointer hover:text-jb-text px-1 text-[13px]">＋</button>
-                  <button
-                    title={termFullscreen ? "Restore" : "Fullscreen"}
-                    onclick={() => (termFullscreen = !termFullscreen)}
-                    class="bg-transparent border-none text-jb-muted cursor-pointer hover:text-jb-text px-1 text-[12px]"
-                  >{termFullscreen ? "⊟" : "⤢"}</button>
+                <!-- ── Terminal tab bar ── -->
+                <div class="flex items-center bg-jb-panel h-[26px] border-b border-jb-border flex-shrink-0 px-1 gap-0 text-[11px] min-w-0 overflow-hidden">
+
+                  <!-- Terminal tabs -->
+                  {#each termTabs as tab}
+                    <!-- svelte-ignore a11y_click_events_have_key_events -->
+                    <!-- svelte-ignore a11y_no_static_element_interactions -->
+                    <div class="flex items-center group h-full flex-shrink-0">
+                      <button
+                        class="flex items-center gap-1 px-2 h-full bg-transparent border-none cursor-pointer text-[11px] border-b-2 transition-colors
+                          {activeTermId === tab.id
+                            ? 'text-jb-text border-b-jb-blue'
+                            : 'text-jb-muted border-b-transparent hover:text-jb-text hover:bg-jb-hover'}"
+                        onclick={() => (activeTermId = tab.id)}
+                      >{tab.label}</button>
+                      {#if termTabs.length > 1}
+                        <button
+                          class="w-[14px] h-[14px] flex items-center justify-center rounded bg-transparent border-none cursor-pointer text-jb-muted hover:text-jb-text hover:bg-jb-hover opacity-0 group-hover:opacity-100 text-[9px] -ml-1 mr-1 flex-shrink-0"
+                          title="Close terminal"
+                          onclick={(e) => { e.stopPropagation(); closeTermTab(tab.id); }}
+                        >✕</button>
+                      {/if}
+                    </div>
+                  {/each}
+
+                  <!-- Action buttons -->
+                  <div class="flex items-center ml-auto flex-shrink-0 gap-0">
+                    <!-- New terminal -->
+                    <button
+                      title="New terminal"
+                      onclick={addTermTab}
+                      class="w-6 h-6 flex items-center justify-center rounded text-jb-muted hover:bg-jb-hover hover:text-jb-text bg-transparent border-none cursor-pointer text-[13px]"
+                    >＋</button>
+                    <!-- Split vertical (side by side) -->
+                    <button
+                      title={splitPane && splitDir === "vertical" ? "Close split" : "Split vertically"}
+                      onclick={() => doSplit("vertical")}
+                      class="w-6 h-6 flex items-center justify-center rounded hover:bg-jb-hover bg-transparent border-none cursor-pointer
+                        {splitPane && splitDir === 'vertical' ? 'text-jb-blue' : 'text-jb-muted hover:text-jb-text'}"
+                    >
+                      <svg viewBox="0 0 14 12" width="13" height="11">
+                        <rect x="0.5" y="0.5" width="5.5" height="11" rx="1" fill="none" stroke="currentColor" stroke-width="1.2"/>
+                        <rect x="8" y="0.5" width="5.5" height="11" rx="1" fill="none" stroke="currentColor" stroke-width="1.2"/>
+                      </svg>
+                    </button>
+                    <!-- Split horizontal (stacked) -->
+                    <button
+                      title={splitPane && splitDir === "horizontal" ? "Close split" : "Split horizontally"}
+                      onclick={() => doSplit("horizontal")}
+                      class="w-6 h-6 flex items-center justify-center rounded hover:bg-jb-hover bg-transparent border-none cursor-pointer
+                        {splitPane && splitDir === 'horizontal' ? 'text-jb-blue' : 'text-jb-muted hover:text-jb-text'}"
+                    >
+                      <svg viewBox="0 0 14 12" width="13" height="11">
+                        <rect x="0.5" y="0.5" width="13" height="4.5" rx="1" fill="none" stroke="currentColor" stroke-width="1.2"/>
+                        <rect x="0.5" y="7" width="13" height="4.5" rx="1" fill="none" stroke="currentColor" stroke-width="1.2"/>
+                      </svg>
+                    </button>
+                    <!-- Fullscreen -->
+                    <button
+                      title={termFullscreen ? "Exit fullscreen" : "Fullscreen"}
+                      onclick={() => (termFullscreen = !termFullscreen)}
+                      class="w-6 h-6 flex items-center justify-center rounded text-jb-muted hover:bg-jb-hover hover:text-jb-text bg-transparent border-none cursor-pointer text-[11px]"
+                    >{termFullscreen ? "⊡" : "⤢"}</button>
+                  </div>
                 </div>
 
-                <!-- xterm.js terminal -->
-                <div class="flex-1 min-h-0 overflow-hidden">
-                  <Terminal
-                    bind:fullscreen={termFullscreen}
-                    onInput={sendTermInput}
-                    onResize={sendTermResize}
-                    onMounted={(fn) => { termWriteFn = fn; sendTermReady(); }}
-                  />
+                <!-- ── Pane area: split or single ── -->
+                <div
+                  class="flex-1 min-h-0 overflow-hidden"
+                  class:flex={splitPane !== null}
+                  class:flex-row={splitPane !== null && splitDir === "vertical"}
+                  class:flex-col={splitPane !== null && splitDir === "horizontal"}
+                >
+                  <!-- All tab panes: always in DOM, switch via visibility -->
+                  <div class="flex-1 min-h-0 min-w-0 overflow-hidden relative">
+                    {#each termTabs as tab}
+                      <div
+                        class="absolute inset-0"
+                        class:invisible={tab.id !== activeTermId}
+                        class:pointer-events-none={tab.id !== activeTermId}
+                      >
+                        <Terminal
+                          onInput={makeTermInput(tab.id)}
+                          onResize={makeTermResize(tab.id)}
+                          onMounted={makeTermMounted(tab)}
+                        />
+                      </div>
+                    {/each}
+                  </div>
+
+                  <!-- Split pane (mounted only when active) -->
+                  {#if splitPane}
+                    <!-- Divider -->
+                    <div
+                      class="flex-shrink-0 bg-jb-border hover:bg-jb-blue transition-colors"
+                      class:w-[3px]={splitDir === "vertical"}
+                      class:h-[3px]={splitDir === "horizontal"}
+                      class:cursor-col-resize={splitDir === "vertical"}
+                      class:cursor-row-resize={splitDir === "horizontal"}
+                    ></div>
+                    <!-- Split terminal -->
+                    <div class="flex-1 min-h-0 min-w-0 overflow-hidden relative">
+                      <!-- Close split button -->
+                      <button
+                        title="Close split"
+                        onclick={closeSplit}
+                        class="absolute top-1 right-1 z-10 w-5 h-5 flex items-center justify-center rounded bg-jb-panel border-none cursor-pointer text-jb-muted hover:text-jb-text hover:bg-jb-hover text-[10px] opacity-0 hover:opacity-100 transition-opacity"
+                        style="opacity: 0"
+                        onmouseenter={(e) => (e.currentTarget as HTMLElement).style.opacity = "1"}
+                        onmouseleave={(e) => (e.currentTarget as HTMLElement).style.opacity = "0"}
+                      >✕</button>
+                      <Terminal
+                        onInput={makeTermInput(splitPane.id)}
+                        onResize={makeTermResize(splitPane.id)}
+                        onMounted={makeTermMounted(splitPane)}
+                      />
+                    </div>
+                  {/if}
                 </div>
               </div>
 
