@@ -26,6 +26,8 @@ type AppSchema = {
     messages: {
       /** Raw PTY output, base64-encoded */
       "terminal:output": { data: string; workspaceId: string };
+      /** Shell process exited (e.g. user typed 'exit') */
+      "terminal:exited": { workspaceId: string };
       "menu:open-settings": Record<string, never>;
       "menu:new-file": Record<string, never>;
       "menu:open-file": Record<string, never>;
@@ -84,8 +86,16 @@ const rpc = BrowserView.defineRPC<AppSchema>({
       "terminal:ready": ({ workspaceId }) => {
         // Ensure the terminal exists for this workspace
         if (!workspaceReady.has(workspaceId)) {
-          createTerminalForWorkspace(workspaceId, (b64) =>
-            sendOrBuffer(workspaceId, b64),
+          createTerminalForWorkspace(
+            workspaceId,
+            (b64) => sendOrBuffer(workspaceId, b64),
+            () => {
+              // Shell exited: clean up server-side state and notify frontend
+              workspaceReady.delete(workspaceId);
+              workspaceBuffers.delete(workspaceId);
+              pendingResize.delete(workspaceId);
+              sendToWebview("terminal:exited", { workspaceId });
+            },
           );
           // Replay the last resize so spawnShell() is triggered.
           // terminal:resize always arrives before terminal:ready (fired in the

@@ -149,6 +149,7 @@
       requests: Record<string, never>;
       messages: {
         "terminal:output": { data: string; workspaceId: string };
+        "terminal:exited": { workspaceId: string };
         "menu:open-settings": Record<string, never>;
         "menu:new-file": Record<string, never>;
         "menu:open-file": Record<string, never>;
@@ -186,6 +187,15 @@
           const tab = termTabs.find(t => t.id === termId);
           if (tab?.writeFn) { tab.writeFn(data); return; }
           if (splitPane?.id === termId) splitPane.writeFn?.(data);
+        },
+        "terminal:exited": ({ workspaceId: termId }) => {
+          // Close the split pane if it exited
+          if (splitPane?.id === termId) {
+            splitPane = null;
+            return;
+          }
+          // Close the tab; closeTermTab also closes the panel when it's the last one
+          closeTermTab(termId);
         },
         "menu:open-settings": () => { /* TODO */ },
         "menu:new-file":      () => { /* TODO */ },

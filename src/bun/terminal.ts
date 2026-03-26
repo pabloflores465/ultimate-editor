@@ -110,6 +110,8 @@ interface PtySession {
   slaveFd: number;
   shellSpawned: boolean;
   sendFn: (b64: string) => void;
+  /** Called when the shell process exits (EIO on master fd). */
+  exitFn: () => void;
 }
 
 const sessions = new Map<string, PtySession>();
@@ -158,7 +160,8 @@ function spawnShell(workspaceId: string): void {
   session.slaveFd = -1;
 
   // ── Batching de output ─────────────────────────────────────────────────
-  const send = session.sendFn;
+  const send   = session.sendFn;
+  const onExit = session.exitFn;
   const masterFd = session.masterFd;
   // Each session gets its own read buffer to avoid sharing issues
   const readBuf = Buffer.allocUnsafe(65536);
@@ -173,7 +176,11 @@ function spawnShell(workspaceId: string): void {
 
   function readLoop(): void {
     read(masterFd, readBuf, 0, readBuf.length, null, (err, n) => {
-      if (err) return; // EIO cuando el shell termina
+      if (err) {
+        // EIO = shell exited; notify frontend so the tab can be closed.
+        onExit();
+        return;
+      }
 
       if (n > 0) {
         if (pending === null) {
@@ -201,7 +208,11 @@ function spawnShell(workspaceId: string): void {
  * lanza en la primera llamada a resizePty(), cuando ya conocemos el tamaño
  * real del viewport.
  */
-export function createTerminalForWorkspace(workspaceId: string, send: (b64: string) => void): void {
+export function createTerminalForWorkspace(
+  workspaceId: string,
+  send: (b64: string) => void,
+  onExit: () => void,
+): void {
   // Destroy any existing session for this workspace first
   destroyTerminal(workspaceId);
 
@@ -211,6 +222,7 @@ export function createTerminalForWorkspace(workspaceId: string, send: (b64: stri
     slaveFd:  pty.slaveFd,
     shellSpawned: false,
     sendFn: send,
+    exitFn: onExit,
   });
 }
 
