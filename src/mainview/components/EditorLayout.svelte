@@ -889,9 +889,12 @@
                   class="flex-1 min-h-0 overflow-hidden flex"
                   class:flex-col={splitPane !== null && splitDir === "horizontal"}
                 >
-                  <!-- All tab panes: always in DOM, switch via visibility -->
+                  <!-- All tab panes: always in DOM, switch via visibility.
+                       The (tab.id) key ensures Svelte unmounts the old Terminal
+                       and mounts a fresh one when the tab id changes (e.g. after
+                       exit), instead of reusing the dead xterm instance. -->
                   <div class="flex-1 min-h-0 min-w-0 overflow-hidden relative">
-                    {#each termTabs as tab}
+                    {#each termTabs as tab (tab.id)}
                       <div
                         class="absolute inset-0"
                         class:invisible={tab.id !== activeTermId}
