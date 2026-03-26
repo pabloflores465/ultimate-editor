@@ -157,15 +157,12 @@ function spawnShell(workspaceId: string): void {
   });
 
   // Unref the child so it does NOT hold Bun's libuv event loop open.
-  // Without this, when the last PTY session closes, the loop drains and Bun exits.
   child.unref();
 
   closeSync(session.slaveFd);
   session.slaveFd = -1;
 
   // ── Exit detection ─────────────────────────────────────────────────────
-  // Primary mechanism: EIO on the PTY master fd when the slave closes.
-  // Guard with a flag so only the first call to onExit fires.
   const send   = session.sendFn;
   const onExit = session.exitFn;
   const masterFd = session.masterFd;
@@ -176,6 +173,16 @@ function spawnShell(workspaceId: string): void {
     exited = true;
     onExit();
   }
+
+  // Primary: poll child.exitCode every 100ms — reliable on macOS regardless
+  // of PTY EIO timing.  The interval is unref'd so it never keeps Bun alive.
+  const exitPoll = setInterval(() => {
+    if (child.exitCode !== null) {
+      clearInterval(exitPoll);
+      notifyExit();
+    }
+  }, 100);
+  try { (exitPoll as NodeJS.Timeout & { unref?: () => void }).unref?.(); } catch {}
 
   // ── Batching de output ─────────────────────────────────────────────────
   // Each session gets its own read buffer to avoid sharing issues

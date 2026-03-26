@@ -189,14 +189,11 @@
           if (splitPane?.id === termId) splitPane.writeFn?.(data);
         },
         "terminal:exited": ({ workspaceId: termId }) => {
-          // Defer to next tick so Svelte flushes the update to the DOM.
-          setTimeout(() => {
-            if (splitPane?.id === termId) {
-              splitPane = null;
-              return;
-            }
-            closeTermTab(termId);
-          }, 0);
+          if (splitPane?.id === termId) {
+            splitPane = null;
+            return;
+          }
+          closeTermTab(termId);
         },
         "menu:open-settings": () => { /* TODO */ },
         "menu:new-file":      () => { /* TODO */ },
@@ -235,17 +232,17 @@
   function closeTermTab(id: string) {
     const idx = termTabs.findIndex(t => t.id === id);
     if (idx < 0) return;
-    const next = termTabs.filter(t => t.id !== id);
-    if (next.length === 0) {
-      // Last tab exited: open a fresh terminal so the panel stays alive.
-      // Do NOT close the panel — the user only wants THIS terminal to end.
-      addTermTab();
-      termTabs = termTabs.filter(t => t.id !== id);
-      return;
-    }
-    termTabs = next;
-    if (activeTermId === id) {
-      activeTermId = next[Math.max(0, idx - 1)].id;
+    const rest = termTabs.filter(t => t.id !== id);
+    if (rest.length === 0) {
+      // Last tab: replace atomically with a fresh terminal (panel stays open).
+      const freshId = newTermId();
+      termTabs = [{ id: freshId, label: "zsh", writeFn: null }];
+      activeTermId = freshId;
+    } else {
+      termTabs = rest;
+      if (activeTermId === id) {
+        activeTermId = rest[Math.max(0, idx - 1)].id;
+      }
     }
   }
 
