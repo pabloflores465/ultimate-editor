@@ -17,14 +17,18 @@
  * ── Optimizaciones de rendimiento ───────────────────────────────────────────
  * • Batching de output: los chunks que llegan en el mismo tick del event loop
  *   se fusionan en un solo mensaje RPC, reduciendo overhead de serialización.
- * • Buffer reutilizable: un único Buffer de 64 KB evita allocaciones frecuentes.
+ * • Buffer reutilizable por sesión: un Buffer de 64 KB por instancia evita
+ *   allocaciones frecuentes y colisiones entre sesiones.
  * • Sin logging en el hot path: los console.error bloqueaban el event loop.
  *
  * ── Deferred shell spawn ────────────────────────────────────────────────────
- * initPty() solo crea el PTY y almacena la función de envío. El shell NO se
- * lanza hasta que resizePty() recibe el tamaño real del webview. Esto evita
- * que zsh genere output formateado para 80x24 cuando el panel real puede ser
- * mucho más pequeño, lo que causaba un gap enorme antes del primer prompt.
+ * createTerminalForWorkspace() solo crea el PTY y almacena la función de
+ * envío. El shell NO se lanza hasta que resizePty() recibe el tamaño real
+ * del webview. Esto evita que zsh genere output formateado para 80x24 cuando
+ * el panel real puede ser mucho más pequeño.
+ *
+ * ── Multi-workspace support ──────────────────────────────────────────────────
+ * Each workspace gets its own PTY session, keyed by workspaceId.
  */
 
 import { dlopen, FFIType, ptr } from "bun:ffi";
@@ -41,8 +45,8 @@ const TIOCSWINSZ = 0x80087467n;
 //   • .zshenv / .zshrc wrappers que sourcean los originales del usuario y luego
 //     sobreescriben variables de spacing de temas (p10k, spaceship, oh-my-zsh)
 //   • starship.toml con add_newline = false (preserva el resto del config)
-function ensureZdotdir(): string {
-  const dir = join(tmpdir(), `ult-zsh-${process.env.USER ?? "user"}`);
+function ensureZdotdir(workspaceId: string): string {
+  const dir = join(tmpdir(), `ult-zsh-${workspaceId}`);
   rmSync(dir, { recursive: true, force: true });
   mkdirSync(dir, { recursive: true });
 
@@ -100,11 +104,15 @@ const { symbols: { openpty, ioctl } } = dlopen("libSystem.B.dylib", {
   },
 });
 
-// ── Estado ────────────────────────────────────────────────────────────────────
-let masterFd = -1;
-let slaveFd  = -1;
-let shellSpawned = false;
-let sendFn: ((b64: string) => void) | null = null;
+// ── Per-workspace session state ───────────────────────────────────────────────
+interface PtySession {
+  masterFd: number;
+  slaveFd: number;
+  shellSpawned: boolean;
+  sendFn: (b64: string) => void;
+}
+
+const sessions = new Map<string, PtySession>();
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -121,16 +129,17 @@ function setWinSize(fd: number, cols: number, rows: number): void {
   ioctl(fd, TIOCSWINSZ, ptr(ws));
 }
 
-/** Lanza zsh y empieza el read loop. Solo se llama una vez. */
-function spawnShell(): void {
-  if (shellSpawned || slaveFd < 0 || !sendFn) return;
-  shellSpawned = true;
+/** Lanza zsh para una sesión y empieza el read loop. Solo se llama una vez por sesión. */
+function spawnShell(workspaceId: string): void {
+  const session = sessions.get(workspaceId);
+  if (!session || session.shellSpawned || session.slaveFd < 0) return;
+  session.shellSpawned = true;
 
-  const zdotdir = ensureZdotdir();
+  const zdotdir = ensureZdotdir(workspaceId);
 
   nodeSpawn("/bin/zsh", ["-i"], {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    stdio: [slaveFd, slaveFd, slaveFd] as any,
+    stdio: [session.slaveFd, session.slaveFd, session.slaveFd] as any,
     env: {
       ...process.env,
       TERM:                "xterm-256color",
@@ -145,11 +154,13 @@ function spawnShell(): void {
     detached: false,
   });
 
-  closeSync(slaveFd);
-  slaveFd = -1;
+  closeSync(session.slaveFd);
+  session.slaveFd = -1;
 
   // ── Batching de output ─────────────────────────────────────────────────
-  const send = sendFn;
+  const send = session.sendFn;
+  const masterFd = session.masterFd;
+  // Each session gets its own read buffer to avoid sharing issues
   const readBuf = Buffer.allocUnsafe(65536);
   let pending: Buffer | null = null;
 
@@ -186,36 +197,61 @@ function spawnShell(): void {
 // ── API pública ───────────────────────────────────────────────────────────────
 
 /**
- * Crea el PTY pero NO lanza el shell todavía. El shell se lanza en la primera
- * llamada a resizePty(), cuando ya conocemos el tamaño real del viewport.
+ * Crea el PTY para un workspace pero NO lanza el shell todavía. El shell se
+ * lanza en la primera llamada a resizePty(), cuando ya conocemos el tamaño
+ * real del viewport.
  */
-export function initPty(send: (b64: string) => void): void {
+export function createTerminalForWorkspace(workspaceId: string, send: (b64: string) => void): void {
+  // Destroy any existing session for this workspace first
+  destroyTerminal(workspaceId);
+
   const pty = createPty();
-  masterFd = pty.masterFd;
-  slaveFd  = pty.slaveFd;
-  sendFn   = send;
+  sessions.set(workspaceId, {
+    masterFd: pty.masterFd,
+    slaveFd:  pty.slaveFd,
+    shellSpawned: false,
+    sendFn: send,
+  });
 }
 
-/** Escribe bytes de entrada del usuario (base64) al PTY master. */
-export function writeToTty(b64: string): void {
-  if (masterFd < 0 || !shellSpawned) return;
+/** Escribe bytes de entrada del usuario (base64) al PTY master de un workspace. */
+export function writeToTty(workspaceId: string, b64: string): void {
+  const session = sessions.get(workspaceId);
+  if (!session || session.masterFd < 0 || !session.shellSpawned) return;
   try {
-    writeSync(masterFd, Buffer.from(b64, "base64"));
+    writeSync(session.masterFd, Buffer.from(b64, "base64"));
   } catch {
     // Ignorar si el proceso ya terminó
   }
 }
 
 /**
- * Redimensiona el PTY. En la primera llamada, también lanza el shell, ya que
- * es el primer momento en que conocemos el tamaño real del terminal.
+ * Redimensiona el PTY de un workspace. En la primera llamada, también lanza
+ * el shell, ya que es el primer momento en que conocemos el tamaño real del
+ * terminal.
  */
-export function resizePty(cols: number, rows: number): void {
-  if (masterFd < 0) return;
-  setWinSize(masterFd, cols, rows);
+export function resizePty(workspaceId: string, cols: number, rows: number): void {
+  const session = sessions.get(workspaceId);
+  if (!session || session.masterFd < 0) return;
+  setWinSize(session.masterFd, cols, rows);
 
   // Primera llamada → arrancar el shell con el tamaño correcto
-  if (!shellSpawned) {
-    spawnShell();
+  if (!session.shellSpawned) {
+    spawnShell(workspaceId);
   }
+}
+
+/**
+ * Cierra el PTY master y elimina la sesión del workspace.
+ */
+export function destroyTerminal(workspaceId: string): void {
+  const session = sessions.get(workspaceId);
+  if (!session) return;
+  try {
+    if (session.masterFd >= 0) closeSync(session.masterFd);
+  } catch {}
+  try {
+    if (session.slaveFd >= 0) closeSync(session.slaveFd);
+  } catch {}
+  sessions.delete(workspaceId);
 }

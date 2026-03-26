@@ -27,6 +27,8 @@ export interface WorkspaceState {
   activeTabId: string | null;
   // ── Breakpoints: path → set of 1-based line numbers ──
   breakpoints: Record<string, number[]>;
+  // ── Project root directory ──
+  rootPath: string;
 }
 
 // ── Factory ────────────────────────────────────────────────────
@@ -48,6 +50,7 @@ function createWorkspace(name: string): WorkspaceState {
     openTabs: [],
     activeTabId: null,
     breakpoints: {},
+    rootPath: "",
   };
 }
 
@@ -110,6 +113,11 @@ class WorkspaceStore {
   renameWorkspace(id: string, name: string) {
     const ws = this.workspaces.find((w) => w.id === id);
     if (ws) ws.name = name;
+  }
+
+  setRootPath(id: string, path: string) {
+    const ws = this.workspaces.find((w) => w.id === id);
+    if (ws) ws.rootPath = path;
   }
 
   updateActive(patch: Partial<WorkspaceState>) {

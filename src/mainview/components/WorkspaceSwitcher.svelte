@@ -1,13 +1,16 @@
 <script lang="ts">
   /**
-   * WorkspaceSwitcher — GNOME-inspired workspace switching
+   * WorkspaceSwitcher — macOS/GNOME/KDE-inspired workspace switching
    *
-   * Design principles from GNOME Shell + KDE Plasma research:
+   * Design principles:
    *   · Gesture progress drives position 1:1 (no threshold before movement starts)
    *   · Axis lock: decide horizontal vs vertical on first significant movement
-   *   · Snap to workspace if distance > 30% vw OR velocity > 350 px/s (flick)
-   *   · Spring bounce-back when gesture is cancelled
-   *   · GNOME EASE_OUT_QUAD (280ms) for snap, spring for cancel
+   *   · Snap to workspace if distance > 28% vw OR velocity > 350 px/s (flick)
+   *   · Spring physics (rAF) for all gesture-initiated transitions:
+   *       – Snap inherits gesture velocity → fast flick = instant-feeling snap
+   *       – Cancel uses underdamped spring → subtle KDE-style bounce-back
+   *   · CSS transition for keyboard shortcuts (deliberate, no prior velocity)
+   *   · Immediate commit on clear flick/threshold (no 80ms wait)
    *   · No {#key} re-creation — EditorLayout stays mounted, only props update
    *
    * Track layout (3 slots, absolute-positioned):
@@ -30,10 +33,10 @@
   let { children }: { children: import("svelte").Snippet } = $props();
 
   // ── Track position ─────────────────────────────────────────
-  let trackX      = $state(0);          // translateX applied to the 3-slot container
-  let trackCss    = $state<string>("none"); // CSS transition (none while dragging)
-  let busy        = $state(false);       // locked during animated snap
-  let gestureDir  = $state<0 | 1 | -1>(0); // 0=idle 1=going-next -1=going-prev
+  let trackX      = $state(0);             // translateX applied to the 3-slot container
+  let trackCss    = $state<string>("none"); // CSS transition (none during spring/drag)
+  let busy        = $state(false);          // locked during animated snap
+  let gestureDir  = $state<0 | 1 | -1>(0); // 0=idle  1=going-next  -1=going-prev
 
   // Adjacent workspaces (for side panels)
   let prevWs = $derived(workspaceStore.workspaces[workspaceStore.activeIndex - 1] ?? null);
@@ -46,55 +49,132 @@
   // Sync router → active workspace's remembered route
   $effect(() => { workspaceStore.updateActive({ activeRoute: router.location ?? "/" }); });
 
-  // ── Snap animations ────────────────────────────────────────
-  // GNOME uses EASE_OUT_QUAD ≈ cubic-bezier(0.25, 0.46, 0.45, 0.94) at ~250ms
-  // KDE uses OutCubic ≈ cubic-bezier(0.33, 1, 0.68, 1) at 300ms
-  // Spring overshoot for cancel feels satisfying (like KDE's bounce-back)
-  const DUR_SNAP   = 260;
-  const DUR_SPRING = 380;
-  const EASE_SNAP  = "cubic-bezier(0.25, 0.46, 0.45, 0.94)"; // ease-out-quad
-  const EASE_SPRING = "cubic-bezier(0.34, 1.56, 0.64, 1)";   // spring with slight overshoot
+  // ── CSS constants (keyboard shortcuts only) ─────────────────
+  const DUR_SNAP    = 260;
+  const DUR_SPRING  = 380;
+  const EASE_SNAP   = "cubic-bezier(0.25, 0.46, 0.45, 0.94)"; // ease-out-quad
+  const EASE_SPRING = "cubic-bezier(0.34, 1.56, 0.64, 1)";    // spring with slight overshoot
 
-  function goNext() {
-    if (busy || !nextWs) { snapBack(); return; }
+  // ── Spring physics constants ────────────────────────────────
+  // Snap:   critically damped   → no overshoot, fast. ζ = b/(2√k) = 57/(2√800) ≈ 1.0
+  // Cancel: slightly underdamped → subtle bounce.    ζ = 25/(2√320) ≈ 0.70
+  const SNAP_K = 800;
+  const SNAP_B = 57;
+  const BACK_K = 320;
+  const BACK_B = 25;
+
+  // ── Spring animation engine ─────────────────────────────────
+  let rafId: number | null = null;
+
+  function killAnim() {
+    if (rafId !== null) { cancelAnimationFrame(rafId); rafId = null; }
+  }
+
+  /**
+   * Animate trackX to `target` using spring physics.
+   * Inherits `initVel` (px/s) from the gesture so the motion feels continuous.
+   *
+   *   acc = −k·(pos − target) − b·vel   (semi-implicit Euler, stable)
+   */
+  function springTo(
+    target: number,
+    initVel: number,
+    k: number,
+    b: number,
+    onDone: () => void,
+  ) {
+    killAnim();
+    trackCss = "none";
+
+    let pos  = trackX;
+    let vel  = initVel;
+    let last = -1;
+
+    rafId = requestAnimationFrame(function tick(t: number) {
+      if (last < 0) { last = t; rafId = requestAnimationFrame(tick); return; }
+
+      const dt  = Math.min((t - last) / 1000, 0.033); // cap at ~30 fps minimum
+      last = t;
+
+      const acc = -k * (pos - target) - b * vel;
+      vel += acc * dt;
+      pos += vel * dt;
+      trackX = pos;
+
+      // Settled?
+      if (Math.abs(pos - target) < 1.5 && Math.abs(vel) < 40) {
+        trackX = target;
+        rafId  = null;
+        onDone();
+        return;
+      }
+
+      rafId = requestAnimationFrame(tick);
+    });
+  }
+
+  // ── Gesture-initiated snaps (spring, inherit velocity) ──────
+  function doSnapNext(vel: number) {
+    if (busy || !nextWs) { doSnapBack(vel); return; }
     busy = true;
     gestureDir = 1;
-    trackCss = `transform ${DUR_SNAP}ms ${EASE_SNAP}`;
-    trackX = -window.innerWidth;
-    setTimeout(() => {
-      // Workspace state updates instantly; track resets without animation
+    springTo(-window.innerWidth, vel, SNAP_K, SNAP_B, () => {
       workspaceStore.next();
-      trackCss = "none";
-      trackX = 0;
+      trackX     = 0;
       gestureDir = 0;
-      busy = false;
+      busy       = false;
+    });
+  }
+
+  function doSnapPrev(vel: number) {
+    if (busy || !prevWs) { doSnapBack(vel); return; }
+    busy = true;
+    gestureDir = -1;
+    springTo(window.innerWidth, vel, SNAP_K, SNAP_B, () => {
+      workspaceStore.prev();
+      trackX     = 0;
+      gestureDir = 0;
+      busy       = false;
+    });
+  }
+
+  function doSnapBack(vel: number) {
+    busy = true;
+    springTo(0, vel, BACK_K, BACK_B, () => {
+      gestureDir = 0;
+      busy       = false;
+    });
+  }
+
+  // ── Keyboard snaps (CSS transition, deliberate pace) ────────
+  function goNext() {
+    if (busy || !nextWs) return;
+    busy = true;
+    gestureDir = 1;
+    trackCss   = `transform ${DUR_SNAP}ms ${EASE_SNAP}`;
+    trackX     = -window.innerWidth;
+    setTimeout(() => {
+      workspaceStore.next();
+      trackCss   = "none";
+      trackX     = 0;
+      gestureDir = 0;
+      busy       = false;
     }, DUR_SNAP);
   }
 
   function goPrev() {
-    if (busy || !prevWs) { snapBack(); return; }
+    if (busy || !prevWs) return;
     busy = true;
     gestureDir = -1;
-    trackCss = `transform ${DUR_SNAP}ms ${EASE_SNAP}`;
-    trackX = window.innerWidth;
+    trackCss   = `transform ${DUR_SNAP}ms ${EASE_SNAP}`;
+    trackX     = window.innerWidth;
     setTimeout(() => {
       workspaceStore.prev();
-      trackCss = "none";
-      trackX = 0;
+      trackCss   = "none";
+      trackX     = 0;
       gestureDir = 0;
-      busy = false;
+      busy       = false;
     }, DUR_SNAP);
-  }
-
-  function snapBack() {
-    busy = true;
-    trackCss = `transform ${DUR_SPRING}ms ${EASE_SPRING}`;
-    trackX = 0;
-    setTimeout(() => {
-      trackCss = "none";
-      gestureDir = 0;
-      busy = false;
-    }, DUR_SPRING);
   }
 
   // ── Gesture helpers ────────────────────────────────────────
@@ -137,11 +217,11 @@
     const onWheel = (e: WheelEvent) => {
       if (workspaceStore.overviewOpen) return;
 
-      const now  = Date.now();
-      const px   = normDelta(e, "x");
-      const py   = normDelta(e, "y");
+      const now   = Date.now();
+      const px    = normDelta(e, "x");
+      const py    = normDelta(e, "y");
       const prevT = lastT;
-      const dt   = Math.max(now - prevT, 4);
+      const dt    = Math.max(now - prevT, 4);
       lastT = now;
 
       // New gesture? Reset if wheel was idle for >350ms
@@ -154,9 +234,10 @@
       if (phase === "idle") {
         const absX = Math.abs(px), absY = Math.abs(py);
         if (absX + absY < 2) return; // too weak to decide
-        // Lock to horizontal if X dominates or is comparable to Y
         if (absX >= absY * 0.7) {
           if (!consumedByScroll(e.target, px)) {
+            // Allow interrupting a running spring so user can grab mid-animation
+            if (rafId !== null) { killAnim(); busy = false; }
             phase = "h-lock";
           } else {
             phase = "v-lock";
@@ -173,7 +254,12 @@
       // trackX = gx so track moves left (negative) → next workspace visible ✓
       e.preventDefault(); // we own this gesture — prevent page scroll
       gx += px;
-      velX = velX * 0.6 + (px / dt * 1000) * 0.4; // EMA velocity
+      // Cap accumulation to ±1 screen width — prevents momentum-scroll events
+      // (macOS keeps firing after finger lift) from pushing gx way past the target
+      const maxGx = window.innerWidth;
+      gx = Math.max(-maxGx, Math.min(maxGx, gx));
+
+      velX = velX * 0.6 + (px / dt * 1000) * 0.4; // EMA velocity (px/s)
 
       gestureDir = gx < -8 ? 1 : gx > 8 ? -1 : 0;
 
@@ -186,28 +272,46 @@
         trackX = gx; // 1:1 — workspace sticks to finger
       }
 
-      // Schedule "gesture ended" detection
+      // ── Immediate commit on clear flick or large drag ─────
+      // Don't wait for the 80ms silence timer when intent is unambiguous.
+      // Threshold: velocity > 600 px/s  OR  distance > 50% vw
+      const SNAP_DIST     = window.innerWidth * 0.28;
+      const SNAP_VEL      = 350;
+      const FLICK_VEL     = 600;   // instant-commit velocity
+      const EAGER_DIST    = window.innerWidth * 0.50; // instant-commit distance
+
+      const commitNext = (velX < -FLICK_VEL && gx < -15) || (gx < -EAGER_DIST);
+      const commitPrev = (velX >  FLICK_VEL && gx >  15) || (gx >  EAGER_DIST);
+
+      if ((commitNext && nextWs) || (commitPrev && prevWs)) {
+        if (wheelEndTimer) clearTimeout(wheelEndTimer);
+        phase = "cooldown";
+        setTimeout(() => { phase = "idle"; }, 600);
+        if (commitNext) doSnapNext(velX);
+        else            doSnapPrev(velX);
+        gx = 0; velX = 0;
+        return;
+      }
+
+      // ── Schedule "gesture ended" detection ───────────────
       if (wheelEndTimer) clearTimeout(wheelEndTimer);
       wheelEndTimer = setTimeout(() => {
         if (phase !== "h-lock") return;
         phase = "idle";
 
-        const SNAP_DIST = window.innerWidth * 0.28; // 28% of vw (GNOME-like)
-        const SNAP_VEL  = 350;                       // px/s flick threshold
-
         if ((gx < -SNAP_DIST || velX < -SNAP_VEL) && nextWs) {
           phase = "cooldown";
           setTimeout(() => { phase = "idle"; }, 600);
-          goNext();
+          doSnapNext(velX);
         } else if ((gx > SNAP_DIST || velX > SNAP_VEL) && prevWs) {
           phase = "cooldown";
           setTimeout(() => { phase = "idle"; }, 600);
-          goPrev();
+          doSnapPrev(velX);
         } else {
-          snapBack();
+          doSnapBack(velX);
         }
         gx = 0; velX = 0;
-      }, 80); // 80ms silence = gesture ended (tighter than before)
+      }, 80);
     };
 
     // ── TOUCH SWIPE ───────────────────────────────────────────
@@ -259,9 +363,9 @@
       const dx  = e.changedTouches[0].clientX - tx0;
       const SD  = window.innerWidth * 0.28;
       const SV  = 350;
-      if ((dx < -SD || tvX < -SV) && nextWs)      goNext();
-      else if ((dx >  SD || tvX >  SV) && prevWs) goPrev();
-      else                                          snapBack();
+      if ((dx < -SD || tvX < -SV) && nextWs)      doSnapNext(tvX);
+      else if ((dx >  SD || tvX >  SV) && prevWs) doSnapPrev(tvX);
+      else                                          doSnapBack(tvX);
       tAxis = null;
     };
 

@@ -140,16 +140,16 @@
     bun: {
       requests: Record<string, never>;
       messages: {
-        "terminal:input": { data: string };
-        "terminal:resize": { cols: number; rows: number };
+        "terminal:input": { data: string; workspaceId: string };
+        "terminal:resize": { cols: number; rows: number; workspaceId: string };
         /** Notifica al proceso Bun que el terminal está listo para recibir output */
-        "terminal:ready": Record<string, never>;
+        "terminal:ready": { workspaceId: string };
       };
     };
     webview: {
       requests: Record<string, never>;
       messages: {
-        "terminal:output": { data: string };
+        "terminal:output": { data: string; workspaceId: string };
         "menu:open-settings": Record<string, never>;
         "menu:new-file": Record<string, never>;
         "menu:open-file": Record<string, never>;
@@ -164,8 +164,10 @@
   const termRpc = Electroview.defineRPC<AppSchema>({
     handlers: {
       messages: {
-        "terminal:output": ({ data }) => {
-          termWriteFn?.(data);
+        "terminal:output": ({ data, workspaceId }) => {
+          if (workspaceId === ws.id) {
+            termWriteFn?.(data);
+          }
         },
         "menu:open-settings": () => { /* TODO */ },
         "menu:new-file":      () => { /* TODO */ },
@@ -178,15 +180,15 @@
   new Electroview({ rpc: termRpc });
 
   function sendTermInput(b64: string) {
-    termRpc.send["terminal:input"]({ data: b64 });
+    termRpc.send["terminal:input"]({ data: b64, workspaceId: ws.id });
   }
 
   function sendTermResize(cols: number, rows: number) {
-    termRpc.send["terminal:resize"]({ cols, rows });
+    termRpc.send["terminal:resize"]({ cols, rows, workspaceId: ws.id });
   }
 
   function sendTermReady() {
-    termRpc.send["terminal:ready"]({});
+    termRpc.send["terminal:ready"]({ workspaceId: ws.id });
   }
 </script>
 

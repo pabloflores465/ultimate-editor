@@ -1,7 +1,7 @@
 import { BrowserWindow, Updater, WGPUView, ApplicationMenu, BrowserView } from "electrobun/bun";
 const { setApplicationMenu, on } = ApplicationMenu;
 import { renderTriangle } from "./webgpu-renderer";
-import { initPty, writeToTty, resizePty } from "./terminal";
+import { createTerminalForWorkspace, writeToTty, resizePty } from "./terminal";
 
 const DEV_SERVER_PORT = 5173;
 const DEV_SERVER_URL = `http://localhost:${DEV_SERVER_PORT}`;
@@ -14,18 +14,18 @@ type AppSchema = {
     requests: Record<string, never>;
     messages: {
       /** Raw PTY input, base64-encoded */
-      "terminal:input": { data: string };
+      "terminal:input": { data: string; workspaceId: string };
       /** Terminal viewport dimensions */
-      "terminal:resize": { cols: number; rows: number };
+      "terminal:resize": { cols: number; rows: number; workspaceId: string };
       /** Webview listo para recibir output del terminal */
-      "terminal:ready": Record<string, never>;
+      "terminal:ready": { workspaceId: string };
     };
   };
   webview: {
     requests: Record<string, never>;
     messages: {
       /** Raw PTY output, base64-encoded */
-      "terminal:output": { data: string };
+      "terminal:output": { data: string; workspaceId: string };
       "menu:open-settings": Record<string, never>;
       "menu:new-file": Record<string, never>;
       "menu:open-file": Record<string, never>;
@@ -34,40 +34,69 @@ type AppSchema = {
   };
 };
 
-// ── Buffer de output del PTY hasta que el webview esté listo ─────────────────
-// El PTY se inicia inmediatamente pero el webview puede tardar en conectarse.
-// Sin este buffer, el prompt inicial (y cualquier output temprano) se pierde.
-let webviewReady = false;
-const outputBuffer: string[] = [];
+// ── Per-workspace output buffering ────────────────────────────────────────────
+// Each workspace buffers PTY output until its webview signals ready.
+const workspaceReady = new Map<string, boolean>();
+const workspaceBuffers = new Map<string, string[]>();
 
-function sendOrBuffer(b64: string): void {
-  if (webviewReady) {
-    sendToWebview("terminal:output", { data: b64 });
+// Saves the last resize dimensions received per workspace.
+// terminal:resize arrives BEFORE terminal:ready (Terminal.svelte fires
+// onResize then onMounted in the same onMount), so the session doesn't exist
+// yet when the first resize comes in.  We store it here and replay it once
+// the session is created in the terminal:ready handler.
+const pendingResize = new Map<string, { cols: number; rows: number }>();
+
+function sendOrBuffer(workspaceId: string, b64: string): void {
+  if (workspaceReady.get(workspaceId)) {
+    sendToWebview("terminal:output", { data: b64, workspaceId });
   } else {
-    outputBuffer.push(b64);
+    if (!workspaceBuffers.has(workspaceId)) {
+      workspaceBuffers.set(workspaceId, []);
+    }
+    workspaceBuffers.get(workspaceId)!.push(b64);
   }
 }
 
-function flushBuffer(): void {
-  webviewReady = true;
-  for (const chunk of outputBuffer) {
-    sendToWebview("terminal:output", { data: chunk });
+function flushWorkspaceBuffer(workspaceId: string): void {
+  workspaceReady.set(workspaceId, true);
+  const buf = workspaceBuffers.get(workspaceId);
+  if (buf) {
+    for (const chunk of buf) {
+      sendToWebview("terminal:output", { data: chunk, workspaceId });
+    }
+    workspaceBuffers.delete(workspaceId);
   }
-  outputBuffer.length = 0;
 }
 
 // ── RPC ──────────────────────────────────────────────────────────────────────
 const rpc = BrowserView.defineRPC<AppSchema>({
   handlers: {
     messages: {
-      "terminal:input": ({ data }) => {
-        writeToTty(data);
+      "terminal:input": ({ data, workspaceId }) => {
+        writeToTty(workspaceId, data);
       },
-      "terminal:resize": ({ cols, rows }) => {
-        resizePty(cols, rows);
+      "terminal:resize": ({ cols, rows, workspaceId }) => {
+        // Always save the latest dimensions so terminal:ready can replay them
+        // if the session doesn't exist yet.
+        pendingResize.set(workspaceId, { cols, rows });
+        resizePty(workspaceId, cols, rows);
       },
-      "terminal:ready": () => {
-        flushBuffer();
+      "terminal:ready": ({ workspaceId }) => {
+        // Ensure the terminal exists for this workspace
+        if (!workspaceReady.has(workspaceId)) {
+          createTerminalForWorkspace(workspaceId, (b64) =>
+            sendOrBuffer(workspaceId, b64),
+          );
+          // Replay the last resize so spawnShell() is triggered.
+          // terminal:resize always arrives before terminal:ready (fired in the
+          // same onMount in Terminal.svelte), meaning the session didn't exist
+          // when the first resize came in and resizePty() silently returned.
+          const size = pendingResize.get(workspaceId);
+          if (size) {
+            resizePty(workspaceId, size.cols, size.rows);
+          }
+        }
+        flushWorkspaceBuffer(workspaceId);
       },
     },
   },
@@ -111,10 +140,6 @@ function sendToWebview(
     (mainWindow.webview.rpc?.send as any)?.[name]?.(payload);
   } catch {}
 }
-
-// ── Boot PTY (after the window helper is defined) ────────────────────────────
-// El output se bufferiza hasta que el webview envíe "terminal:ready"
-initPty((b64) => sendOrBuffer(b64));
 
 // ── WebGPU polling ───────────────────────────────────────────────────────────
 const renderedViews = new Set<number>();
