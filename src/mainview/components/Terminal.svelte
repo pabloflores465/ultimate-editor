@@ -20,6 +20,8 @@
   let containerEl: HTMLDivElement | undefined = $state(undefined);
   let term: Terminal | undefined;
   let fitAddon: FitAddon | undefined;
+  let lastCols = 0;
+  let lastRows = 0;
 
   onMount(() => {
     if (!containerEl) return;
@@ -58,6 +60,8 @@
     // Primera llamada a onResize → terminal:resize RPC → spawnShell() con
     // el tamaño correcto. El output del shell se bufferiza hasta que
     // terminal:ready llegue (enviado por onMounted abajo).
+    lastCols = term.cols;
+    lastRows = term.rows;
     onResize(term.cols, term.rows);
 
     // Forward user input to backend as base64
@@ -80,7 +84,11 @@
       clearTimeout(resizeTimer);
       resizeTimer = setTimeout(() => {
         fitAddon?.fit();
-        if (term) onResize(term.cols, term.rows);
+        if (term && (term.cols !== lastCols || term.rows !== lastRows)) {
+          lastCols = term.cols;
+          lastRows = term.rows;
+          onResize(term.cols, term.rows);
+        }
       }, 16);
     });
     ro.observe(containerEl);

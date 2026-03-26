@@ -55,30 +55,7 @@ function ensureZdotdir(): string {
   ].join("\n");
 
   writeFileSync(join(dir, ".zshenv"), wrapFile(".zshenv") + "\n");
-  writeFileSync(
-    join(dir, ".zshrc"),
-    [
-      wrapFile(".zshrc"),
-      "",
-      "# Ultimate Editor: suppress blank lines added by themes",
-      "PROMPT_ADD_NEWLINE=false",
-      "POWERLEVEL9K_PROMPT_ADD_NEWLINE=0",
-      "_POWERLEVEL9K_PROMPT_ADD_NEWLINE=0",
-      "SPACESHIP_PROMPT_ADD_NEWLINE=false",
-      "",
-      "_ue_no_newline() {",
-      "  POWERLEVEL9K_PROMPT_ADD_NEWLINE=0",
-      "  _POWERLEVEL9K_PROMPT_ADD_NEWLINE=0",
-      "  PROMPT_ADD_NEWLINE=false",
-      "  SPACESHIP_PROMPT_ADD_NEWLINE=false",
-      "}",
-      "precmd_functions=(_ue_no_newline ${precmd_functions[@]})",
-      "",
-      "if (( ${+functions[_p9k_precmd]} )); then",
-      "  _p9k_add_newline() { : }",
-      "fi",
-    ].join("\n") + "\n",
-  );
+  writeFileSync(join(dir, ".zshrc"), wrapFile(".zshrc") + "\n");
 
   // Starship config override
   const userStarship = join(homedir(), ".config", "starship.toml");
@@ -91,7 +68,7 @@ function ensureZdotdir(): string {
   }
   writeFileSync(
     join(dir, "starship.toml"),
-    `add_newline = false\n${starshipContent}`,
+    `add_newline = true\n${starshipContent}`,
   );
 
   return dir;
