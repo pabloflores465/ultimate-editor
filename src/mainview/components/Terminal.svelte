@@ -49,15 +49,16 @@
     fitAddon = new FitAddon();
     term.loadAddon(fitAddon);
     term.open(containerEl);
-    fitAddon.fit();
 
-    // Notify backend of initial size
-    onResize(term.cols, term.rows);
+    // ── Expose write function to parent first (registers termWriteFn +
+    //    sends terminal:ready RPC). Shell spawn is deferred until the
+    //    first onResize call below, which carries the real viewport size.
+    onMounted((b64: string) => {
+      if (!term) return;
+      term.write(Uint8Array.from(atob(b64), (c) => c.charCodeAt(0)));
+    });
 
-    // Forward user keystrokes/paste to backend as base64.
-    // Usamos TextEncoder → reduce a bytes UTF-8 → btoa via String.fromCharCode.
-    // fromCharCode con spread solo es seguro para arrays pequeños (input de usuario
-    // siempre es corto), así que es la opción más rápida aquí.
+    // ── Forward user input to backend as base64 ───────────────────────
     const enc = new TextEncoder();
     term.onData((data: string) => {
       const bytes = enc.encode(data);
@@ -66,36 +67,41 @@
       onInput(btoa(bin));
     });
 
-    // Auto-resize when container changes size
-    const ro = new ResizeObserver(() => {
+    // ── Fit after the browser has finished layout (RAF) ───────────────
+    // Do NOT call fitAddon.fit() synchronously here — the container may
+    // not have its final dimensions yet.  requestAnimationFrame waits
+    // for the layout pass to complete, then measures and notifies the
+    // backend of the real cols/rows.  That first onResize call is what
+    // triggers spawnShell() in terminal.ts.
+    let rafId = requestAnimationFrame(() => {
       fitAddon?.fit();
       if (term) onResize(term.cols, term.rows);
     });
+
+    // ── Debounced ResizeObserver ───────────────────────────────────────
+    // Handles all subsequent size changes, including fullscreen toggle
+    // (parent applies fixed+inset-0 → container resizes → this fires).
+    // Debounce prevents multiple SIGWINCH signals during a resize drag.
+    let resizeTimer: ReturnType<typeof setTimeout>;
+    const ro = new ResizeObserver(() => {
+      clearTimeout(resizeTimer);
+      resizeTimer = setTimeout(() => {
+        fitAddon?.fit();
+        if (term) onResize(term.cols, term.rows);
+      }, 16);
+    });
     ro.observe(containerEl);
 
-    // Expose write function to parent.
-    // Decode base64 → Uint8Array con Uint8Array.from que es nativo (más rápido
-    // que el bucle manual byte-a-byte con índices).
-    onMounted((b64: string) => {
-      if (!term) return;
-      term.write(Uint8Array.from(atob(b64), (c) => c.charCodeAt(0)));
-    });
-
     return () => {
+      cancelAnimationFrame(rafId);
+      clearTimeout(resizeTimer);
       ro.disconnect();
       term?.dispose();
     };
   });
 
-  // Re-fit when fullscreen changes
-  $effect(() => {
-    // Depend on fullscreen reactively
-    const _ = fullscreen;
-    setTimeout(() => {
-      fitAddon?.fit();
-      if (term) onResize(term.cols, term.rows);
-    }, 50);
-  });
+  // NOTE: $effect for fullscreen removed — ResizeObserver already handles
+  // the container-size change triggered by the CSS class toggle.
 </script>
 
 <!-- Wrapper fills whatever space its parent gives it -->
