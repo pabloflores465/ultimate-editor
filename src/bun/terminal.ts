@@ -156,15 +156,16 @@ function spawnShell(workspaceId: string): void {
     detached: false,
   });
 
+  // Unref the child so it does NOT hold Bun's libuv event loop open.
+  // Without this, when the last PTY session closes, the loop drains and Bun exits.
+  child.unref();
+
   closeSync(session.slaveFd);
   session.slaveFd = -1;
 
-  // ── Reliable exit detection via child process 'close' event ────────────
-  // On macOS, the PTY master may not always emit EIO immediately after the
-  // shell exits (it can return n=0 first or delay EIO).  Listening to the
-  // child 'close' event is the guaranteed mechanism for detecting shell exit.
-  // We use a flag so only the first notification fires (both 'close' and the
-  // EIO path in the read loop may trigger in quick succession).
+  // ── Exit detection ─────────────────────────────────────────────────────
+  // Primary mechanism: EIO on the PTY master fd when the slave closes.
+  // Guard with a flag so only the first call to onExit fires.
   const send   = session.sendFn;
   const onExit = session.exitFn;
   const masterFd = session.masterFd;
@@ -175,8 +176,6 @@ function spawnShell(workspaceId: string): void {
     exited = true;
     onExit();
   }
-
-  child.on("close", notifyExit);
 
   // ── Batching de output ─────────────────────────────────────────────────
   // Each session gets its own read buffer to avoid sharing issues

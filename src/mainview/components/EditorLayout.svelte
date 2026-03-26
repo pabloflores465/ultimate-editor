@@ -237,7 +237,10 @@
     if (idx < 0) return;
     const next = termTabs.filter(t => t.id !== id);
     if (next.length === 0) {
-      onUpdate({ bottomPanelOpen: false });
+      // Last tab exited: open a fresh terminal so the panel stays alive.
+      // Do NOT close the panel — the user only wants THIS terminal to end.
+      addTermTab();
+      termTabs = termTabs.filter(t => t.id !== id);
       return;
     }
     termTabs = next;
