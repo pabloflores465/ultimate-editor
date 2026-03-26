@@ -22,10 +22,10 @@
  */
 
 import { dlopen, FFIType, ptr } from "bun:ffi";
-import { read, writeSync, closeSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
+import { read, writeSync, closeSync, mkdirSync, writeFileSync, rmSync, readFileSync, existsSync } from "node:fs";
 import { spawn as nodeSpawn } from "node:child_process";
 import { join } from "node:path";
-import { tmpdir } from "node:os";
+import { tmpdir, homedir } from "node:os";
 
 // ── Constantes ioctl en macOS ─────────────────────────────────────────────────
 const TIOCSWINSZ = 0x80087467n;
@@ -79,6 +79,23 @@ function ensureZdotdir(): string {
       "  _p9k_add_newline() { : }",
       "fi",
     ].join("\n") + "\n",
+  );
+
+  // ── Starship config override ──────────────────────────────────────────────
+  // Starship usa add_newline = true por defecto. Creamos un config que lo
+  // deshabilita, preservando el resto de la config del usuario si existe.
+  const userStarship = join(homedir(), ".config", "starship.toml");
+  let starshipContent = "";
+  if (existsSync(userStarship)) {
+    try {
+      starshipContent = readFileSync(userStarship, "utf-8");
+      // Eliminar cualquier add_newline existente para evitar duplicados
+      starshipContent = starshipContent.replace(/^\s*add_newline\s*=.*$/m, "");
+    } catch {}
+  }
+  writeFileSync(
+    join(dir, "starship.toml"),
+    `add_newline = false\n${starshipContent}`,
   );
 
   return dir;
@@ -142,6 +159,8 @@ export function initPty(send: (b64: string) => void): void {
       // ZDOTDIR hace que zsh cargue nuestros wrappers en lugar de ~/.zshrc
       // Los wrappers sourcean el original y luego sobreescriben las vars de spacing
       ZDOTDIR:             zdotdir,
+      // Starship: apuntar a nuestro config que fuerza add_newline = false
+      STARSHIP_CONFIG:     join(zdotdir, "starship.toml"),
       PROMPT_ADD_NEWLINE:  "false",
       POWERLEVEL9K_PROMPT_ADD_NEWLINE: "false",
     },
