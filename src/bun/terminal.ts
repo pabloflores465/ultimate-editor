@@ -22,7 +22,7 @@
  */
 
 import { dlopen, FFIType, ptr } from "bun:ffi";
-import { read, writeSync, closeSync, mkdirSync, writeFileSync } from "node:fs";
+import { read, writeSync, closeSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
 import { spawn as nodeSpawn } from "node:child_process";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -39,6 +39,8 @@ const TIOCSWINSZ = 0x80087467n;
 // Esto evita que oh-my-zsh / powerlevel10k sobreescriban la variable.
 function ensureZdotdir(): string {
   const dir = join(tmpdir(), `ult-zsh-${process.env.USER ?? "user"}`);
+  // Siempre regenerar los wrappers para que los cambios de configuración se apliquen
+  rmSync(dir, { recursive: true, force: true });
   mkdirSync(dir, { recursive: true });
 
   // Genera un wrapper que desactiva ZDOTDIR → source original → restaura ZDOTDIR
@@ -57,10 +59,25 @@ function ensureZdotdir(): string {
       wrapFile(".zshrc"),
       "",
       "# Ultimate Editor: suppress blank lines added by themes",
+      "# p10k copies POWERLEVEL9K_* → _POWERLEVEL9K_* at init, so override both",
       "PROMPT_ADD_NEWLINE=false",
-      "POWERLEVEL9K_PROMPT_ADD_NEWLINE=false",
+      "POWERLEVEL9K_PROMPT_ADD_NEWLINE=0",
+      "_POWERLEVEL9K_PROMPT_ADD_NEWLINE=0",
       "SPACESHIP_PROMPT_ADD_NEWLINE=false",
-      "precmd_functions=(${precmd_functions[@]//add-zsh-hook precmd _p9k_precmd_hook})",
+      "",
+      "# precmd hook prepended so it runs before p10k's precmd",
+      "_ue_no_newline() {",
+      "  POWERLEVEL9K_PROMPT_ADD_NEWLINE=0",
+      "  _POWERLEVEL9K_PROMPT_ADD_NEWLINE=0",
+      "  PROMPT_ADD_NEWLINE=false",
+      "  SPACESHIP_PROMPT_ADD_NEWLINE=false",
+      "}",
+      "precmd_functions=(_ue_no_newline ${precmd_functions[@]})",
+      "",
+      "# If p10k is loaded, also patch its internal newline function directly",
+      "if (( ${+functions[_p9k_precmd]} )); then",
+      "  _p9k_add_newline() { : }",
+      "fi",
     ].join("\n") + "\n",
   );
 
