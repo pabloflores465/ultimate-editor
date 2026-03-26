@@ -82,7 +82,7 @@ function ensureZdotdir(): string {
   }
   writeFileSync(
     join(dir, "starship.toml"),
-    `add_newline = false\n${starshipContent}`,
+    `add_newline = true\n${starshipContent}`,
   );
 
   return dir;
