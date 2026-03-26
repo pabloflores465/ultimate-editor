@@ -50,15 +50,17 @@
     term.loadAddon(fitAddon);
     term.open(containerEl);
 
-    // ── Expose write function to parent first (registers termWriteFn +
-    //    sends terminal:ready RPC). Shell spawn is deferred until the
-    //    first onResize call below, which carries the real viewport size.
-    onMounted((b64: string) => {
-      if (!term) return;
-      term.write(Uint8Array.from(atob(b64), (c) => c.charCodeAt(0)));
-    });
+    // Fit síncrono: en Svelte 5 el DOM está completamente resuelto cuando
+    // onMount corre, así que getBoundingClientRect() ya devuelve las
+    // dimensiones finales del contenedor flex.
+    fitAddon.fit();
 
-    // ── Forward user input to backend as base64 ───────────────────────
+    // Primera llamada a onResize → terminal:resize RPC → spawnShell() con
+    // el tamaño correcto. El output del shell se bufferiza hasta que
+    // terminal:ready llegue (enviado por onMounted abajo).
+    onResize(term.cols, term.rows);
+
+    // Forward user input to backend as base64
     const enc = new TextEncoder();
     term.onData((data: string) => {
       const bytes = enc.encode(data);
@@ -67,21 +69,12 @@
       onInput(btoa(bin));
     });
 
-    // ── Fit after the browser has finished layout (RAF) ───────────────
-    // Do NOT call fitAddon.fit() synchronously here — the container may
-    // not have its final dimensions yet.  requestAnimationFrame waits
-    // for the layout pass to complete, then measures and notifies the
-    // backend of the real cols/rows.  That first onResize call is what
-    // triggers spawnShell() in terminal.ts.
-    let rafId = requestAnimationFrame(() => {
-      fitAddon?.fit();
-      if (term) onResize(term.cols, term.rows);
-    });
-
-    // ── Debounced ResizeObserver ───────────────────────────────────────
-    // Handles all subsequent size changes, including fullscreen toggle
-    // (parent applies fixed+inset-0 → container resizes → this fires).
-    // Debounce prevents multiple SIGWINCH signals during a resize drag.
+    // Debounced ResizeObserver — handles all subsequent size changes
+    // (panel drag, fullscreen toggle via CSS class swap, window resize).
+    // 16ms debounce coalesces bursts into a single SIGWINCH.
+    // NOTE: ResizeObserver fires once synchronously for the initial
+    // observation, but that triggers the 16ms debounce, so no extra
+    // SIGWINCH is sent at startup (the sync fit above already ran).
     let resizeTimer: ReturnType<typeof setTimeout>;
     const ro = new ResizeObserver(() => {
       clearTimeout(resizeTimer);
@@ -92,16 +85,24 @@
     });
     ro.observe(containerEl);
 
+    // Expose write function to parent AFTER fit+resize so that the backend
+    // already has the correct PTY dimensions before we signal readiness.
+    // EditorLayout's onMounted handler stores writeFn and calls sendTermReady().
+    onMounted((b64: string) => {
+      if (!term) return;
+      term.write(Uint8Array.from(atob(b64), (c) => c.charCodeAt(0)));
+    });
+
     return () => {
-      cancelAnimationFrame(rafId);
       clearTimeout(resizeTimer);
       ro.disconnect();
       term?.dispose();
     };
   });
 
-  // NOTE: $effect for fullscreen removed — ResizeObserver already handles
-  // the container-size change triggered by the CSS class toggle.
+  // $effect for fullscreen removed: ResizeObserver fires when the parent
+  // toggles the fixed+inset-0 CSS classes, which changes containerEl's
+  // dimensions and naturally triggers the debounced resize handler.
 </script>
 
 <!-- Wrapper fills whatever space its parent gives it -->
