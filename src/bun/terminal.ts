@@ -139,7 +139,7 @@ function spawnShell(workspaceId: string): void {
 
   const zdotdir = ensureZdotdir(workspaceId);
 
-  nodeSpawn("/bin/zsh", ["-i"], {
+  const child = nodeSpawn("/bin/zsh", ["-i"], {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     stdio: [session.slaveFd, session.slaveFd, session.slaveFd] as any,
     env: {
@@ -159,10 +159,26 @@ function spawnShell(workspaceId: string): void {
   closeSync(session.slaveFd);
   session.slaveFd = -1;
 
-  // ── Batching de output ─────────────────────────────────────────────────
+  // ── Reliable exit detection via child process 'close' event ────────────
+  // On macOS, the PTY master may not always emit EIO immediately after the
+  // shell exits (it can return n=0 first or delay EIO).  Listening to the
+  // child 'close' event is the guaranteed mechanism for detecting shell exit.
+  // We use a flag so only the first notification fires (both 'close' and the
+  // EIO path in the read loop may trigger in quick succession).
   const send   = session.sendFn;
   const onExit = session.exitFn;
   const masterFd = session.masterFd;
+  let exited = false;
+
+  function notifyExit(): void {
+    if (exited) return;
+    exited = true;
+    onExit();
+  }
+
+  child.on("close", notifyExit);
+
+  // ── Batching de output ─────────────────────────────────────────────────
   // Each session gets its own read buffer to avoid sharing issues
   const readBuf = Buffer.allocUnsafe(65536);
   let pending: Buffer | null = null;
@@ -177,8 +193,8 @@ function spawnShell(workspaceId: string): void {
   function readLoop(): void {
     read(masterFd, readBuf, 0, readBuf.length, null, (err, n) => {
       if (err) {
-        // EIO = shell exited; notify frontend so the tab can be closed.
-        onExit();
+        // EIO = shell exited (backup path, child 'close' is the primary).
+        notifyExit();
         return;
       }
 

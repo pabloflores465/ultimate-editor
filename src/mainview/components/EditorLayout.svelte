@@ -189,13 +189,14 @@
           if (splitPane?.id === termId) splitPane.writeFn?.(data);
         },
         "terminal:exited": ({ workspaceId: termId }) => {
-          // Close the split pane if it exited
-          if (splitPane?.id === termId) {
-            splitPane = null;
-            return;
-          }
-          // Close the tab; closeTermTab also closes the panel when it's the last one
-          closeTermTab(termId);
+          // Defer to next tick so Svelte flushes the update to the DOM.
+          setTimeout(() => {
+            if (splitPane?.id === termId) {
+              splitPane = null;
+              return;
+            }
+            closeTermTab(termId);
+          }, 0);
         },
         "menu:open-settings": () => { /* TODO */ },
         "menu:new-file":      () => { /* TODO */ },
