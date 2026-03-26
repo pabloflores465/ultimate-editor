@@ -1,6 +1,15 @@
 import { push } from "svelte-spa-router";
 
 // ── Types ──────────────────────────────────────────────────────
+export interface EditorTab {
+  id: string;
+  path: string;      // relative path like "src/mainview/main.ts"
+  name: string;      // filename "main.ts"
+  icon: string;      // "ts", "js", "svelte", etc.
+  content: string;   // file content
+  modified: boolean; // has unsaved changes
+}
+
 export interface WorkspaceState {
   id: string;
   name: string;
@@ -13,6 +22,11 @@ export interface WorkspaceState {
   expandedFolders: Record<string, boolean>;
   activeRoute: string;
   selectedConfig: string;
+  // ── Editor tabs ──
+  openTabs: EditorTab[];
+  activeTabId: string | null;
+  // ── Breakpoints: path → set of 1-based line numbers ──
+  breakpoints: Record<string, number[]>;
 }
 
 // ── Factory ────────────────────────────────────────────────────
@@ -31,6 +45,9 @@ function createWorkspace(name: string): WorkspaceState {
     },
     activeRoute: "/",
     selectedConfig: "bun run dev",
+    openTabs: [],
+    activeTabId: null,
+    breakpoints: {},
   };
 }
 
@@ -85,7 +102,6 @@ class WorkspaceStore {
       this.activeIndex = newIdx;
       this.transitionKey++;
     } else if (idx <= this.activeIndex) {
-      // Active shifted left by one
       this.activeIndex = Math.max(0, this.activeIndex - 1);
       this.transitionKey++;
     }
@@ -102,6 +118,88 @@ class WorkspaceStore {
 
   toggleOverview() {
     this.overviewOpen = !this.overviewOpen;
+  }
+
+  // ── Tab management ──────────────────────────────────────────
+
+  openFile(path: string, name: string, icon: string, content: string) {
+    const ws = this.workspaces[this.activeIndex];
+    // If already open, just activate it
+    const existing = ws.openTabs.find(t => t.path === path);
+    if (existing) {
+      ws.activeTabId = existing.id;
+      return;
+    }
+    const tab: EditorTab = {
+      id: crypto.randomUUID(),
+      path,
+      name,
+      icon,
+      content,
+      modified: false,
+    };
+    ws.openTabs.push(tab);
+    ws.activeTabId = tab.id;
+  }
+
+  closeTab(tabId: string) {
+    const ws = this.workspaces[this.activeIndex];
+    const idx = ws.openTabs.findIndex(t => t.id === tabId);
+    if (idx === -1) return;
+    ws.openTabs.splice(idx, 1);
+    // Activate adjacent tab
+    if (ws.activeTabId === tabId) {
+      if (ws.openTabs.length === 0) {
+        ws.activeTabId = null;
+      } else {
+        const newIdx = Math.min(idx, ws.openTabs.length - 1);
+        ws.activeTabId = ws.openTabs[newIdx].id;
+      }
+    }
+  }
+
+  setActiveTab(tabId: string) {
+    this.workspaces[this.activeIndex].activeTabId = tabId;
+  }
+
+  updateTabContent(tabId: string, content: string) {
+    const ws = this.workspaces[this.activeIndex];
+    const tab = ws.openTabs.find(t => t.id === tabId);
+    if (tab) {
+      tab.content = content;
+      tab.modified = true;
+    }
+  }
+
+  saveTab(tabId: string) {
+    const ws = this.workspaces[this.activeIndex];
+    const tab = ws.openTabs.find(t => t.id === tabId);
+    if (tab) {
+      tab.modified = false;
+    }
+  }
+
+  // ── Breakpoints ─────────────────────────────────────────────
+
+  toggleBreakpoint(path: string, line: number) {
+    const ws = this.workspaces[this.activeIndex];
+    if (!ws.breakpoints[path]) {
+      ws.breakpoints[path] = [line];
+      return;
+    }
+    const lines = ws.breakpoints[path];
+    const idx = lines.indexOf(line);
+    if (idx === -1) {
+      lines.push(line);
+    } else {
+      lines.splice(idx, 1);
+    }
+    // Trigger reactivity by reassigning
+    ws.breakpoints = { ...ws.breakpoints };
+  }
+
+  getBreakpoints(path: string): number[] {
+    return this.workspaces[this.activeIndex].breakpoints[path] ?? [];
   }
 }
 

@@ -3,7 +3,9 @@
   import FileTree from "./FileTree.svelte";
   import Sidebar from "./Sidebar.svelte";
   import Terminal from "./Terminal.svelte";
+  import CodeEditor from "./CodeEditor.svelte";
   import type { WorkspaceState } from "../stores/workspaceStore.svelte";
+  import { workspaceStore } from "../stores/workspaceStore.svelte";
   import { Electroview } from "electrobun/view";
 
   // ── Props ─────────────────────────────────────────────────────
@@ -27,17 +29,34 @@
 
   // (file tree is now managed by Sidebar.svelte)
 
-  // ── Tabs ─────────────────────────────────────────────────────
-  const tabs = [
-    { name:"index.svelte",    icon:"svelte", route:"/" },
-    { name:"triangle.svelte", icon:"svelte", route:"/triangle" },
-  ];
-  let activeTabName = $derived(
-    tabs.find(t => t.route === ws.activeRoute)?.name ?? tabs[0].name
-  );
+  // ── Editor icon colors ────────────────────────────────────────
   function iconColor(icon: string) {
-    return ({ svelte:"#ff6b6b", ts:"#4e9ede", js:"#ffc66d", css:"#9876aa", json:"#aed9b8" } as Record<string,string>)[icon] ?? "#a9b7c6";
+    return ({ svelte:"#ff6b6b", ts:"#4e9ede", tsx:"#4e9ede", js:"#ffc66d", jsx:"#ffc66d", css:"#9876aa", scss:"#9876aa", json:"#aed9b8", html:"#cc7832", md:"#a9b7c6" } as Record<string,string>)[icon] ?? "#a9b7c6";
   }
+
+  // ── Active editor tab (from store) ───────────────────────────
+  let activeTab = $derived(
+    ws.openTabs.find(t => t.id === ws.activeTabId) ?? null
+  );
+
+  // ── Save current file ────────────────────────────────────────
+  function saveCurrentFile() {
+    if (ws.activeTabId) {
+      workspaceStore.saveTab(ws.activeTabId);
+    }
+  }
+
+  // Keyboard shortcut: Ctrl/Cmd+S
+  onMount(() => {
+    function handleKey(e: KeyboardEvent) {
+      if ((e.ctrlKey || e.metaKey) && e.key === "s") {
+        e.preventDefault();
+        saveCurrentFile();
+      }
+    }
+    window.addEventListener("keydown", handleKey);
+    return () => window.removeEventListener("keydown", handleKey);
+  });
 
   // ── Left tool strip ───────────────────────────────────────
   const leftTools = [
@@ -150,7 +169,7 @@
         "menu:open-settings": () => { /* TODO */ },
         "menu:new-file":      () => { /* TODO */ },
         "menu:open-file":     () => { /* TODO */ },
-        "menu:save-file":     () => { /* TODO */ },
+        "menu:save-file":     () => { saveCurrentFile(); },
       },
     },
   });
@@ -420,7 +439,11 @@
               onUpdate({ expandedFolders: updated });
             }}
             activeRoute={ws.activeRoute}
+            activeTabPath={activeTab?.path ?? ""}
             onClose={() => onUpdate({ leftPanelOpen: false })}
+            onFileOpen={(path, name, icon, content) =>
+              workspaceStore.openFile(path, name, icon, content)
+            }
           />
 
         {:else}
@@ -523,42 +546,73 @@
     <div class="flex-1 flex flex-col min-w-0 min-h-0 overflow-hidden">
 
       <!-- Navigation Bar (breadcrumb) -->
-      <div class="flex items-center h-[26px] bg-jb-panel border-b border-jb-border flex-shrink-0 px-3 gap-1 text-[12px]">
+      <div class="flex items-center h-[26px] bg-jb-panel border-b border-jb-border flex-shrink-0 px-3 gap-1 text-[12px] overflow-hidden">
         <svg viewBox="0 0 12 12" width="12" height="12" fill="#4e9ede" class="flex-shrink-0">
           <rect x="0.5" y="1.5" width="11" height="9" rx="1"/><rect x="0.5" y="1.5" width="5" height="3" rx="1" fill="#6aaddc"/>
         </svg>
-        <span class="text-jb-muted cursor-pointer hover:text-jb-text hover:underline">ultimate_editor</span>
-        <span class="text-jb-dim">›</span>
-        <span class="text-jb-muted cursor-pointer hover:text-jb-text hover:underline">src</span>
-        <span class="text-jb-dim">›</span>
-        <span class="text-jb-muted cursor-pointer hover:text-jb-text hover:underline">mainview</span>
-        <span class="text-jb-dim">›</span>
-        <span class="text-jb-muted cursor-pointer hover:text-jb-text hover:underline">pages</span>
-        <span class="text-jb-dim">›</span>
-        <span class="text-jb-text font-medium">{activeTabName}</span>
+        {#if activeTab}
+          {#each activeTab.path.split("/") as part, i}
+            {#if i < activeTab.path.split("/").length - 1}
+              <span class="text-jb-muted whitespace-nowrap">{part}</span>
+              <span class="text-jb-dim flex-shrink-0">›</span>
+            {:else}
+              <span class="text-jb-text font-medium whitespace-nowrap">{part}</span>
+            {/if}
+          {/each}
+        {:else}
+          <span class="text-jb-muted">ultimate_editor</span>
+        {/if}
       </div>
 
-      <!-- ── EDITOR TABS ── -->
+      <!-- ── EDITOR TABS (from workspaceStore) ── -->
       <div class="flex items-end bg-jb-panel border-b border-jb-border flex-shrink-0 overflow-x-auto min-h-[32px]">
-        {#each tabs as tab}
-          <a
-            href="#{tab.route}"
-            class="group flex items-center gap-1.5 px-3 h-[32px] text-[13px] no-underline border-r border-jb-border flex-shrink-0 whitespace-nowrap relative transition-colors duration-100
-              {activeTabName === tab.name
+        {#each ws.openTabs as tab (tab.id)}
+          <div
+            role="tab"
+            tabindex="0"
+            class="group flex items-center gap-1.5 px-3 h-[32px] text-[13px] border-r border-jb-border flex-shrink-0 whitespace-nowrap relative transition-colors duration-100 cursor-pointer select-none
+              {tab.id === ws.activeTabId
                 ? 'bg-jb-bg text-jb-text2 border-t-2 border-t-jb-blue'
                 : 'bg-jb-panel text-jb-muted hover:bg-jb-hover hover:text-jb-text'}"
+            onclick={() => workspaceStore.setActiveTab(tab.id)}
+            onkeydown={(e) => e.key === "Enter" && workspaceStore.setActiveTab(tab.id)}
           >
-            <span class="text-[9px] font-bold" style="color:{iconColor(tab.icon)}">●</span>
+            <!-- File type dot / unsaved indicator -->
+            {#if tab.modified}
+              <span class="w-2 h-2 rounded-full bg-[#e2c08d] flex-shrink-0" title="Unsaved changes"></span>
+            {:else}
+              <span class="text-[9px] font-bold flex-shrink-0" style="color:{iconColor(tab.icon)}">●</span>
+            {/if}
             <span>{tab.name}</span>
+            <!-- Save hint when modified -->
+            {#if tab.modified}
+              <span class="text-[10px] text-jb-muted ml-0.5" title="Ctrl+S to save">*</span>
+            {/if}
+            <!-- Close button -->
             <button
               class="ml-1 text-[13px] leading-none bg-transparent border-none cursor-pointer px-0.5 rounded text-transparent group-hover:text-jb-muted hover:!text-jb-text hover:bg-jb-hover"
-              onclick={(e) => e.preventDefault()}
+              title="Close tab"
+              onclick={(e) => { e.stopPropagation(); workspaceStore.closeTab(tab.id); }}
             >×</button>
-          </a>
+          </div>
         {/each}
         <div class="flex-1 bg-jb-panel"></div>
         <!-- Editor actions -->
         <div class="flex items-center px-2 gap-1 flex-shrink-0 h-[32px]">
+          {#if activeTab}
+            <button
+              title="Save file (Ctrl+S)"
+              class="flex items-center gap-1 px-2 h-[22px] text-[11px] rounded bg-transparent border-none cursor-pointer text-jb-muted hover:bg-jb-hover hover:text-jb-text"
+              class:text-jb-green={activeTab.modified}
+              onclick={saveCurrentFile}
+            >
+              <svg viewBox="0 0 14 14" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.3">
+                <rect x="2" y="1" width="10" height="12" rx="1"/>
+                <rect x="4" y="1" width="6" height="4" rx="0.5" fill="currentColor"/>
+                <rect x="3" y="7" width="8" height="5" rx="0.5" fill="currentColor" opacity="0.4"/>
+              </svg>
+            </button>
+          {/if}
           <button title="Split Vertically" class="w-6 h-6 flex items-center justify-center rounded text-jb-muted hover:bg-jb-hover hover:text-jb-text bg-transparent border-none cursor-pointer">
             <svg viewBox="0 0 14 14" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.2">
               <rect x="1" y="1" width="12" height="12"/><line x1="7" y1="1" x2="7" y2="13"/>
@@ -571,69 +625,76 @@
       <!-- ── EDITOR + BOTTOM PANEL ── -->
       <div class="flex-1 flex flex-col min-h-0 overflow-hidden">
 
-        <!-- Editor area -->
-        <div class="flex-1 flex min-h-0 overflow-hidden bg-jb-bg">
+        <!-- ── EDITOR AREA ── -->
+        <div class="flex-1 flex min-h-0 overflow-hidden bg-jb-bg relative">
 
-          <!-- Gutter: breakpoints + line numbers + folding + git diff -->
-          <div
-            aria-hidden="true"
-            class="flex-shrink-0 bg-jb-bg border-r border-jb-border2 select-none overflow-hidden flex"
-          >
-            <!-- Breakpoint area -->
-            <div class="w-[14px] bg-jb-bg flex flex-col pt-2">
-              {#each {length: 60} as _, i}
-                <div class="h-[20.8px] flex items-center justify-center">
-                  {#if i === 4 || i === 11}
-                    <span class="w-2.5 h-2.5 rounded-full bg-[#ff6b68] inline-block"></span>
-                  {/if}
-                </div>
-              {/each}
+          {#if activeTab}
+            <!-- ── Real CodeMirror editor ── -->
+            {#key activeTab.id}
+              <CodeEditor
+                tabId={activeTab.id}
+                content={activeTab.content}
+                icon={activeTab.icon}
+                onContentChange={(newContent) => workspaceStore.updateTabContent(activeTab!.id, newContent)}
+                onSave={saveCurrentFile}
+              />
+            {/key}
+          {:else}
+            <!-- ── No file open: show page children + decorative gutter ── -->
+            <!-- Gutter: decorative line numbers for the page content -->
+            <div
+              aria-hidden="true"
+              class="flex-shrink-0 bg-jb-bg border-r border-jb-border2 select-none overflow-hidden flex"
+            >
+              <div class="w-[14px] bg-jb-bg flex flex-col pt-2">
+                {#each {length: 60} as _, i}
+                  <div class="h-[20.8px] flex items-center justify-center">
+                    {#if i === 1 || i === 4}
+                      <span class="w-2.5 h-2.5 rounded-full bg-[#ff6b68] inline-block"></span>
+                    {/if}
+                  </div>
+                {/each}
+              </div>
+              <div class="w-[38px] text-right pr-2 pt-2 text-[12px] font-mono text-jb-dim leading-[1.6]">
+                {#each {length: 60} as _, i}
+                  <div class="h-[20.8px]">{i + 1}</div>
+                {/each}
+              </div>
+              <div class="w-[3px] flex flex-col pt-2">
+                {#each {length: 60} as _, i}
+                  <div class="h-[20.8px]">
+                    {#if i >= 2 && i <= 5}
+                      <div class="h-full bg-[#629755] w-full opacity-80"></div>
+                    {:else if i === 9}
+                      <div class="h-full bg-[#ffc66d] w-full opacity-80"></div>
+                    {/if}
+                  </div>
+                {/each}
+              </div>
+              <div class="w-[14px] flex flex-col pt-2 text-jb-dim text-[10px]">
+                {#each {length: 60} as _, i}
+                  <div class="h-[20.8px] flex items-center justify-center cursor-pointer hover:text-jb-text">
+                    {#if i === 0 || i === 7 || i === 20}
+                      <span>−</span>
+                    {/if}
+                  </div>
+                {/each}
+              </div>
             </div>
-            <!-- Line numbers -->
-            <div class="w-[38px] text-right pr-2 pt-2 text-[12px] font-mono text-jb-dim leading-[1.6]">
-              {#each {length: 60} as _, i}
-                <div class="h-[20.8px]">{i + 1}</div>
-              {/each}
-            </div>
-            <!-- Git diff markers -->
-            <div class="w-[3px] flex flex-col pt-2">
-              {#each {length: 60} as _, i}
-                <div class="h-[20.8px]">
-                  {#if i >= 2 && i <= 5}
-                    <div class="h-full bg-[#629755] w-full opacity-80"></div>
-                  {:else if i === 9}
-                    <div class="h-full bg-[#ffc66d] w-full opacity-80"></div>
-                  {/if}
-                </div>
-              {/each}
-            </div>
-            <!-- Folding area -->
-            <div class="w-[14px] flex flex-col pt-2 text-jb-dim text-[10px]">
-              {#each {length: 60} as _, i}
-                <div class="h-[20.8px] flex items-center justify-center cursor-pointer hover:text-jb-text">
-                  {#if i === 0 || i === 7 || i === 20}
-                    <span>−</span>
-                  {/if}
-                </div>
-              {/each}
-            </div>
-          </div>
 
-          <!-- Editor content -->
-          <div class="flex-1 overflow-auto p-2 pl-3 text-[13px] leading-relaxed select-text font-[inherit]">
-            {@render children()}
-          </div>
+            <!-- Page content (router) -->
+            <div class="flex-1 overflow-auto p-2 pl-3 text-[13px] leading-relaxed select-text font-[inherit]">
+              {@render children()}
+            </div>
 
-          <!-- Right error stripe -->
-          <div class="w-[14px] bg-jb-panel flex-shrink-0 flex flex-col border-l border-jb-border relative">
-            {#each [{pct: 12, c:"#629755"},{pct: 45, c:"#ffc66d"},{pct: 70, c:"#ff6b68"}] as mark}
-              <div
-                class="absolute w-full h-[3px] rounded-sm"
-                style="top:{mark.pct}%; background:{mark.c}; opacity:0.7"
-              ></div>
-            {/each}
-            <div class="absolute top-[8%] w-full h-[5%] bg-[#4e9ede] opacity-40 rounded-sm"></div>
-          </div>
+            <!-- Right error stripe -->
+            <div class="w-[14px] bg-jb-panel flex-shrink-0 flex flex-col border-l border-jb-border relative">
+              {#each [{pct: 12, c:"#629755"},{pct: 45, c:"#ffc66d"},{pct: 70, c:"#ff6b68"}] as mark}
+                <div class="absolute w-full h-[3px] rounded-sm" style="top:{mark.pct}%; background:{mark.c}; opacity:0.7"></div>
+              {/each}
+              <div class="absolute top-[8%] w-full h-[5%] bg-[#4e9ede] opacity-40 rounded-sm"></div>
+            </div>
+          {/if}
 
         </div><!-- end editor area -->
 

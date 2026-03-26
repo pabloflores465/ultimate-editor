@@ -7,6 +7,7 @@
     key?: string;
     icon?: string;
     route?: string | null;
+    path?: string;           // relative path for non-route files
     children?: FileNode[];
   }
 
@@ -16,12 +17,16 @@
     expandedFolders,
     onToggleFolder,
     activeRoute = "/",
+    activeTabPath = "",
+    onFileOpen,
   }: {
     nodes: FileNode[];
     depth?: number;
     expandedFolders: Record<string, boolean>;
     onToggleFolder: (key: string) => void;
     activeRoute?: string;
+    activeTabPath?: string;
+    onFileOpen?: (path: string) => void;
   } = $props();
 
   function fileColor(icon: string) {
@@ -74,11 +79,14 @@
         {expandedFolders}
         {onToggleFolder}
         {activeRoute}
+        {activeTabPath}
+        {onFileOpen}
       />
     {/if}
 
   {:else}
     {#if node.route}
+      <!-- Route-based file (svelte pages) -->
       <a
         href="#{node.route}"
         class="flex items-center h-[22px] cursor-pointer text-jb-text text-[13px] whitespace-nowrap overflow-hidden no-underline hover:bg-jb-hover"
@@ -92,7 +100,26 @@
         >{fileLabel(node.icon ?? '')}</span>
         <span class="flex-1 overflow-hidden text-ellipsis">{node.name}</span>
       </a>
+    {:else if node.path && onFileOpen}
+      <!-- Clickable file → opens in editor -->
+      <div
+        role="button"
+        tabindex="0"
+        class="flex items-center h-[22px] cursor-pointer text-jb-text text-[13px] whitespace-nowrap overflow-hidden hover:bg-jb-hover select-none"
+        class:bg-jb-select={activeTabPath === node.path}
+        class:text-jb-text2={activeTabPath === node.path}
+        style="padding-left: {depth * 14 + 22}px; gap: 4px;"
+        onclick={() => onFileOpen!(node.path!)}
+        onkeydown={(e) => e.key === "Enter" && onFileOpen!(node.path!)}
+      >
+        <span
+          class="font-mono font-black text-[8px] w-4 text-center flex-shrink-0 leading-none"
+          style="color: {fileColor(node.icon ?? '')}"
+        >{fileLabel(node.icon ?? '')}</span>
+        <span class="flex-1 overflow-hidden text-ellipsis">{node.name}</span>
+      </div>
     {:else}
+      <!-- Non-interactive file (no path/callback) -->
       <div
         class="flex items-center h-[22px] cursor-default text-jb-muted text-[13px] whitespace-nowrap overflow-hidden hover:bg-jb-hover/50"
         style="padding-left: {depth * 14 + 22}px; gap: 4px;"
