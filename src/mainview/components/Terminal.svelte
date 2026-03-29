@@ -145,6 +145,7 @@
   }
   :global(.terminal-host .xterm-viewport) {
     overflow-y: scroll !important;
+    overflow-x: scroll !important;
     background-color: #1e1f22 !important;
   }
   :global(.terminal-host .xterm-viewport::-webkit-scrollbar) {
