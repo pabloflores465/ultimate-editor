@@ -959,30 +959,20 @@
 
   <!-- ══ BOTTOM TOOL STRIP ══════════════════════════════════ -->
   <div class="flex items-center h-[27px] bg-jb-panel border-t border-jb-border flex-shrink-0 px-1">
-    {#each bottomTabs as pt}
-      <button
-        class="flex items-center gap-1.5 px-2.5 h-full text-[12px] font-medium border-none bg-transparent cursor-pointer border-t-2 transition-colors
-          {ws.activeBottom === pt.id && ws.bottomPanelOpen
-            ? 'text-jb-text2 border-t-jb-blue'
-            : 'text-jb-muted border-t-transparent hover:text-jb-text hover:bg-jb-hover'}"
-        onclick={() => toggleBottom(pt.id)}
-      >
-        <span class="text-[11px]">{pt.icon}</span>
-        {pt.label}
-        {#if pt.badge !== undefined && pt.badge > 0}
-          <span class="bg-jb-border rounded-full px-1.5 text-[10px]">{pt.badge}</span>
-        {/if}
-      </button>
-    {/each}
-    <div class="flex-1"></div>
-    <button title="Event Log" class="flex items-center gap-1 px-2 h-full text-jb-muted hover:text-jb-text text-[11px] border-none bg-transparent cursor-pointer hover:bg-jb-hover">
-      <span class="text-jb-green text-[10px]">●</span> Event Log
-    </button>
-    <button title="Power Save Mode" class="flex items-center gap-1 px-2 h-full text-jb-muted hover:text-jb-text text-[11px] border-none bg-transparent cursor-pointer hover:bg-jb-hover">
-      <svg viewBox="0 0 14 14" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.2">
-        <circle cx="7" cy="7" r="5.5"/><path d="M7 3v4l2.5 2"/>
+    <button
+      title={ws.bottomPanelOpen ? "Close bottom panel" : "Open bottom panel"}
+      class="flex items-center gap-1.5 px-2.5 h-full text-[12px] font-medium border-none bg-transparent cursor-pointer transition-colors
+        {ws.bottomPanelOpen
+          ? 'text-jb-text2 bg-jb-hover'
+          : 'text-jb-muted hover:text-jb-text hover:bg-jb-hover'}"
+      onclick={() => onUpdate({ bottomPanelOpen: !ws.bottomPanelOpen })}
+    >
+      <svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.2">
+        <rect x="1.5" y="1.5" width="13" height="13" rx="1.5"/>
+        <line x1="1.5" y1="10" x2="14.5" y2="10"/>
       </svg>
     </button>
+    <div class="flex-1"></div>
   </div>
 
   <!-- ══ STATUS BAR ══════════════════════════════════════════ -->
