@@ -1,17 +1,7 @@
 <script lang="ts">
   import FileTree from "./FileTree.svelte";
+  import { workspaceStore, type FileNode } from "../stores/workspaceStore.svelte";
 
-  // ── Types ────────────────────────────────────────────────────
-  interface FileNode {
-    name: string;
-    type: "file" | "folder";
-    key?: string;
-    icon?: string;
-    route?: string | null;
-    children?: FileNode[];
-  }
-
-  // ── Props ────────────────────────────────────────────────────
   let {
     expandedFolders,
     onToggleFolder,
@@ -19,7 +9,9 @@
     activeTabPath = "",
     onClose,
     onFileOpen,
-    onProjectChange,
+    workspaceId,
+    projectRootName,
+    projectFileNodes,
   }: {
     expandedFolders: Record<string, boolean>;
     onToggleFolder: (key: string) => void;
@@ -27,18 +19,15 @@
     activeTabPath?: string;
     onClose: () => void;
     onFileOpen?: (path: string, name: string, icon: string, content: string) => void;
-    onProjectChange?: (hasProject: boolean) => void;
+    workspaceId: string;
+    projectRootName: string;
+    projectFileNodes: FileNode[];
   } = $props();
 
-  // ── Internal state ───────────────────────────────────────────
-  let rootName = $state("No folder open");
-  let fileNodes = $state<FileNode[]>([]);
   let fileInput = $state<HTMLInputElement | null>(null);
   let isDragOver = $state(false);
-  // Map: relative path (without root dir) → File object
   const fileMap = new Map<string, File>();
 
-  // ── Helpers ──────────────────────────────────────────────────
   function getFileIcon(name: string): string {
     const ext = name.split(".").pop()?.toLowerCase() ?? "";
     const map: Record<string, string> = {
@@ -58,11 +47,9 @@
   }
 
   function buildTree(files: FileList): FileNode[] {
-    // Map from folder-path (relative to root, no leading slash) → children array
     const folderMap = new Map<string, FileNode[]>();
-    folderMap.set("", []); // root level
+    folderMap.set("", []);
 
-    // Clear existing file map
     fileMap.clear();
 
     const sorted = Array.from(files).sort((a, b) =>
@@ -71,9 +58,7 @@
 
     for (const file of sorted) {
       const parts = file.webkitRelativePath.split("/");
-      // parts[0] is the root directory name — skip it
 
-      // Ensure every ancestor folder node exists
       for (let i = 1; i < parts.length - 1; i++) {
         const folderPath = parts.slice(1, i + 1).join("/");
         const parentPath = parts.slice(1, i).join("/");
@@ -92,15 +77,12 @@
         }
       }
 
-      // Add the file itself
       const fileName = parts[parts.length - 1];
       const parentPath = parts.slice(1, parts.length - 1).join("/");
       const parentChildren = folderMap.get(parentPath) ?? folderMap.get("")!;
 
-      // Relative path without the root folder name
       const filePath = parts.slice(1).join("/");
 
-      // Register in file map
       fileMap.set(filePath, file);
 
       parentChildren.push({
@@ -115,7 +97,6 @@
     return folderMap.get("")!;
   }
 
-  // ── Open file in editor ─────────────────────────────────────
   async function handleFileOpen(path: string) {
     if (!onFileOpen) return;
     const file = fileMap.get(path);
@@ -129,7 +110,6 @@
     }
   }
 
-  // ── Event handlers ───────────────────────────────────────────
   function openFolderDialog() {
     fileInput?.click();
   }
@@ -139,11 +119,11 @@
     if (!input.files?.length) return;
 
     const files = input.files;
-    rootName = files[0].webkitRelativePath.split("/")[0];
-    fileNodes = buildTree(files);
-    onProjectChange?.(true);
+    const rootName = files[0].webkitRelativePath.split("/")[0];
+    const fileNodes = buildTree(files);
+    
+    workspaceStore.updateProject(workspaceId, { rootName, fileNodes });
 
-    // Reset the input so the same folder can be re-opened
     input.value = "";
   }
 
@@ -154,14 +134,13 @@
     const items = e.dataTransfer?.items;
     if (!items) return;
 
-    // Try to get a DataTransferItemList with webkitGetAsEntry
     for (const item of Array.from(items)) {
       const entry = item.webkitGetAsEntry?.();
       if (entry?.isDirectory) {
-        // Fallback: we can't read file contents without requestFileSystem in a webview,
-        // so just show the folder name and inform user to use the button for full tree.
-        rootName = entry.name;
-        fileNodes = [];
+        workspaceStore.updateProject(workspaceId, { 
+          rootName: entry.name, 
+          fileNodes: [] 
+        });
         break;
       }
     }
@@ -173,8 +152,8 @@
   <!-- ── Header ────────────────────────────────────────────────── -->
   <div class="flex items-center justify-between px-2 h-[30px] bg-jb-panel2 border-b border-jb-border flex-shrink-0">
     <!-- Title -->
-    <span class="text-[12px] font-semibold text-jb-text2 truncate flex-1 mr-1" title={rootName}>
-      {rootName}
+    <span class="text-[12px] font-semibold text-jb-text2 truncate flex-1 mr-1" title={projectRootName}>
+      {projectRootName}
     </span>
 
     <!-- Actions -->
@@ -222,7 +201,7 @@
     role="region"
     aria-label="File explorer"
   >
-    {#if fileNodes.length === 0}
+    {#if projectFileNodes.length === 0}
       <!-- Empty state -->
       <div class="absolute inset-0 flex flex-col items-center justify-center gap-3 text-jb-muted pointer-events-none">
         <svg viewBox="0 0 24 24" width="36" height="36" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="opacity-40">
@@ -244,7 +223,7 @@
           <rect x="0.5" y="1.5" width="11" height="9" rx="1"/>
           <rect x="0.5" y="1.5" width="5" height="3" rx="1" fill="#6aaddc"/>
         </svg>
-        <span class="text-[12px] font-semibold text-jb-text truncate flex-1">{rootName}</span>
+        <span class="text-[12px] font-semibold text-jb-text truncate flex-1">{projectRootName}</span>
         <!-- Re-open button inline -->
         <button
           title="Change folder…"
@@ -255,7 +234,7 @@
 
       <!-- File tree -->
       <FileTree
-        nodes={fileNodes}
+        nodes={projectFileNodes}
         {expandedFolders}
         {onToggleFolder}
         {activeRoute}

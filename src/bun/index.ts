@@ -1,7 +1,7 @@
 import { BrowserWindow, Updater, WGPUView, ApplicationMenu, BrowserView } from "electrobun/bun";
 const { setApplicationMenu, on } = ApplicationMenu;
 import { renderTriangle } from "./webgpu-renderer";
-import { createTerminalForWorkspace, writeToTty, resizePty } from "./terminal";
+import { createTerminalForWorkspace, writeToTty, resizePty, destroyTerminal } from "./terminal";
 
 const DEV_SERVER_PORT = 5173;
 const DEV_SERVER_URL = `http://localhost:${DEV_SERVER_PORT}`;
@@ -19,6 +19,8 @@ type AppSchema = {
       "terminal:resize": { cols: number; rows: number; workspaceId: string };
       /** Webview listo para recibir output del terminal */
       "terminal:ready": { workspaceId: string };
+      /** Destroy terminal session when user closes a pane */
+      "terminal:destroy": { workspaceId: string };
     };
   };
   webview: {
@@ -107,6 +109,13 @@ const rpc = BrowserView.defineRPC<AppSchema>({
           }
         }
         flushWorkspaceBuffer(workspaceId);
+      },
+      "terminal:destroy": ({ workspaceId }) => {
+        // Clean up terminal session when user closes a pane
+        workspaceReady.delete(workspaceId);
+        workspaceBuffers.delete(workspaceId);
+        pendingResize.delete(workspaceId);
+        destroyTerminal(workspaceId);
       },
     },
   },

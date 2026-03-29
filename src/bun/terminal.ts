@@ -110,8 +110,9 @@ interface PtySession {
   slaveFd: number;
   shellSpawned: boolean;
   sendFn: (b64: string) => void;
-  /** Called when the shell process exits (EIO on master fd). */
   exitFn: () => void;
+  childProcess: ReturnType<typeof nodeSpawn> | null;
+  destroyed: boolean;
 }
 
 const sessions = new Map<string, PtySession>();
@@ -134,7 +135,7 @@ function setWinSize(fd: number, cols: number, rows: number): void {
 /** Lanza zsh para una sesión y empieza el read loop. Solo se llama una vez por sesión. */
 function spawnShell(workspaceId: string): void {
   const session = sessions.get(workspaceId);
-  if (!session || session.shellSpawned || session.slaveFd < 0) return;
+  if (!session || session.shellSpawned || session.slaveFd < 0 || session.destroyed) return;
   session.shellSpawned = true;
 
   const zdotdir = ensureZdotdir(workspaceId);
@@ -156,6 +157,8 @@ function spawnShell(workspaceId: string): void {
     detached: false,
   });
 
+  session.childProcess = child;
+
   // Unref the child so it does NOT hold Bun's libuv event loop open.
   child.unref();
 
@@ -166,12 +169,15 @@ function spawnShell(workspaceId: string): void {
   const send   = session.sendFn;
   const onExit = session.exitFn;
   const masterFd = session.masterFd;
+  const sessionRef = session;
   let exited = false;
 
   function notifyExit(): void {
     if (exited) return;
     exited = true;
-    onExit();
+    if (!sessionRef.destroyed) {
+      onExit();
+    }
   }
 
   // Primary: poll child.exitCode every 100ms — reliable on macOS regardless
@@ -190,15 +196,16 @@ function spawnShell(workspaceId: string): void {
   let pending: Buffer | null = null;
 
   function flush(): void {
-    if (pending !== null) {
+    if (pending !== null && !sessionRef.destroyed) {
       send(pending.toString("base64"));
       pending = null;
     }
   }
 
   function readLoop(): void {
+    if (sessionRef.destroyed) return;
     read(masterFd, readBuf, 0, readBuf.length, null, (err, n) => {
-      if (err) {
+      if (err || sessionRef.destroyed) {
         // EIO = shell exited (backup path, child 'close' is the primary).
         notifyExit();
         return;
@@ -245,13 +252,15 @@ export function createTerminalForWorkspace(
     shellSpawned: false,
     sendFn: send,
     exitFn: onExit,
+    childProcess: null,
+    destroyed: false,
   });
 }
 
 /** Escribe bytes de entrada del usuario (base64) al PTY master de un workspace. */
 export function writeToTty(workspaceId: string, b64: string): void {
   const session = sessions.get(workspaceId);
-  if (!session || session.masterFd < 0 || !session.shellSpawned) return;
+  if (!session || session.masterFd < 0 || !session.shellSpawned || session.destroyed) return;
   try {
     writeSync(session.masterFd, Buffer.from(b64, "base64"));
   } catch {
@@ -266,7 +275,7 @@ export function writeToTty(workspaceId: string, b64: string): void {
  */
 export function resizePty(workspaceId: string, cols: number, rows: number): void {
   const session = sessions.get(workspaceId);
-  if (!session || session.masterFd < 0) return;
+  if (!session || session.masterFd < 0 || session.destroyed) return;
   setWinSize(session.masterFd, cols, rows);
 
   // Primera llamada → arrancar el shell con el tamaño correcto
@@ -277,15 +286,39 @@ export function resizePty(workspaceId: string, cols: number, rows: number): void
 
 /**
  * Cierra el PTY master y elimina la sesión del workspace.
+ * Mata el proceso hijo si está corriendo.
  */
 export function destroyTerminal(workspaceId: string): void {
   const session = sessions.get(workspaceId);
   if (!session) return;
+
+  // Mark as destroyed first to prevent callbacks
+  session.destroyed = true;
+
+  // Kill the child process if running
+  if (session.childProcess && session.childProcess.pid) {
+    try {
+      process.kill(session.childProcess.pid, "SIGTERM");
+      // Give it a moment to exit gracefully, then force kill
+      setTimeout(() => {
+        try {
+          if (session.childProcess?.pid) {
+            process.kill(session.childProcess.pid, "SIGKILL");
+          }
+        } catch {}
+      }, 100);
+    } catch {
+      // Process might already be dead
+    }
+  }
+
+  // Close file descriptors
   try {
     if (session.masterFd >= 0) closeSync(session.masterFd);
   } catch {}
   try {
     if (session.slaveFd >= 0) closeSync(session.slaveFd);
   } catch {}
+
   sessions.delete(workspaceId);
 }

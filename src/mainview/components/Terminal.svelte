@@ -22,9 +22,11 @@
   let fitAddon: FitAddon | undefined;
   let lastCols = 0;
   let lastRows = 0;
+  let mounted = false;
 
   onMount(() => {
     if (!containerEl) return;
+    mounted = true;
 
     term = new Terminal({
       cursorBlink: true,
@@ -73,6 +75,7 @@
     // Forward user input to backend as base64
     const enc = new TextEncoder();
     term.onData((data: string) => {
+      if (!mounted) return;
       const bytes = enc.encode(data);
       let bin = "";
       for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
@@ -87,10 +90,12 @@
     // SIGWINCH is sent at startup (the sync fit above already ran).
     let resizeTimer: ReturnType<typeof setTimeout>;
     const ro = new ResizeObserver(() => {
+      if (!mounted) return;
       clearTimeout(resizeTimer);
       resizeTimer = setTimeout(() => {
-        fitAddon?.fit();
-        if (term && (term.cols !== lastCols || term.rows !== lastRows)) {
+        if (!mounted || !fitAddon || !term) return;
+        fitAddon.fit();
+        if (term.cols !== lastCols || term.rows !== lastRows) {
           lastCols = term.cols;
           lastRows = term.rows;
           onResize(term.cols, term.rows);
@@ -103,14 +108,17 @@
     // already has the correct PTY dimensions before we signal readiness.
     // EditorLayout's onMounted handler stores writeFn and calls sendTermReady().
     onMounted((b64: string) => {
-      if (!term) return;
+      if (!mounted || !term) return;
       term.write(Uint8Array.from(atob(b64), (c) => c.charCodeAt(0)));
     });
 
     return () => {
+      mounted = false;
       clearTimeout(resizeTimer);
       ro.disconnect();
       term?.dispose();
+      term = undefined;
+      fitAddon = undefined;
     };
   });
 

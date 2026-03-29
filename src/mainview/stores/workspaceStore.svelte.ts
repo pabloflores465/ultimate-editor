@@ -3,11 +3,27 @@ import { push } from "svelte-spa-router";
 // ── Types ──────────────────────────────────────────────────────
 export interface EditorTab {
   id: string;
-  path: string;      // relative path like "src/mainview/main.ts"
-  name: string;      // filename "main.ts"
-  icon: string;      // "ts", "js", "svelte", etc.
-  content: string;   // file content
-  modified: boolean; // has unsaved changes
+  path: string;
+  name: string;
+  icon: string;
+  content: string;
+  modified: boolean;
+}
+
+export interface FileNode {
+  name: string;
+  type: "file" | "folder";
+  key?: string;
+  icon?: string;
+  route?: string | null;
+  path?: string;
+  children?: FileNode[];
+}
+
+export interface ProjectState {
+  rootName: string;
+  fileNodes: FileNode[];
+  rootPath: string;
 }
 
 export interface WorkspaceState {
@@ -22,13 +38,10 @@ export interface WorkspaceState {
   expandedFolders: Record<string, boolean>;
   activeRoute: string;
   selectedConfig: string;
-  // ── Editor tabs ──
   openTabs: EditorTab[];
   activeTabId: string | null;
-  // ── Breakpoints: path → set of 1-based line numbers ──
   breakpoints: Record<string, number[]>;
-  // ── Project root directory ──
-  rootPath: string;
+  project: ProjectState;
 }
 
 // ── Factory ────────────────────────────────────────────────────
@@ -50,7 +63,11 @@ function createWorkspace(name: string): WorkspaceState {
     openTabs: [],
     activeTabId: null,
     breakpoints: {},
-    rootPath: "",
+    project: {
+      rootName: "No folder open",
+      fileNodes: [],
+      rootPath: "",
+    },
   };
 }
 
@@ -117,7 +134,12 @@ class WorkspaceStore {
 
   setRootPath(id: string, path: string) {
     const ws = this.workspaces.find((w) => w.id === id);
-    if (ws) ws.rootPath = path;
+    if (ws) ws.project.rootPath = path;
+  }
+
+  updateProject(id: string, project: Partial<ProjectState>) {
+    const ws = this.workspaces.find((w) => w.id === id);
+    if (ws) Object.assign(ws.project, project);
   }
 
   updateActive(patch: Partial<WorkspaceState>) {

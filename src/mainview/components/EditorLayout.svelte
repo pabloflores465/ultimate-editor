@@ -26,7 +26,8 @@
   let resizingBottom = $state(false);
   let runConfigOpen  = $state(false);
   let hamburgerOpen  = $state(false);
-  let hasProject     = $state(false);
+
+  let hasProject = $derived(ws.project.fileNodes.length > 0);
 
   // (file tree is now managed by Sidebar.svelte)
 
@@ -143,6 +144,7 @@
         "terminal:input": { data: string; workspaceId: string };
         "terminal:resize": { cols: number; rows: number; workspaceId: string };
         "terminal:ready": { workspaceId: string };
+        "terminal:destroy": { workspaceId: string };
       };
     };
     webview: {
@@ -158,42 +160,49 @@
     };
   };
 
-  // ── Multi-terminal state ──────────────────────────────────────────────────
-  interface TermPane {
-    id: string;
-    label: string;
-    writeFn: ((b64: string) => void) | null;
-  }
+  // ── Tiling terminal state ──────────────────────────────────────────────────
+  import { TilingStore, findAllTerminals, findNode } from "../stores/tilingStore.svelte";
+  import TerminalLayout from "./TerminalLayout.svelte";
+  let tiling = new TilingStore();
 
-  let termCounter = 0;
-  function newTermId() { return `${ws.id}_t${termCounter++}`; }
+  // Track all terminal IDs that have ever been created (for stable rendering)
+  let allTerminalIds = $state<string[]>([]);
 
-  const _initId = newTermId();
-  let termTabs  = $state<TermPane[]>([{ id: _initId, label: "zsh", writeFn: null }]);
-  let activeTermId = $state(_initId);
-
-  // Split pane: shown alongside the active tab
-  let splitPane = $state<TermPane | null>(null);
-  let splitDir  = $state<"vertical" | "horizontal">("vertical");
+  // Sync allTerminalIds with tiling.terminals
+  $effect(() => {
+    const currentIds = tiling.terminals.map(t => t.id);
+    if (currentIds.length !== allTerminalIds.length || 
+        !currentIds.every((id, i) => id === allTerminalIds[i])) {
+      allTerminalIds = currentIds;
+    }
+  });
 
   // Bottom panel maximize
   let bottomMaximized = $state(false);
   let termFullscreen  = $state(false);
 
+  // Initialize terminal when panel opens
+  $effect(() => {
+    if (ws.bottomPanelOpen && ws.activeBottom === "terminal" && !tiling.root) {
+      const id = tiling.init(ws.id);
+      allTerminalIds = [id];
+    }
+  });
+
   const termRpc = Electroview.defineRPC<AppSchema>({
     handlers: {
       messages: {
         "terminal:output": ({ data, workspaceId: termId }) => {
-          const tab = termTabs.find(t => t.id === termId);
-          if (tab?.writeFn) { tab.writeFn(data); return; }
-          if (splitPane?.id === termId) splitPane.writeFn?.(data);
+          if (tiling.isClosing(termId)) return;
+          const terminal = findNode(tiling.root, termId);
+          if (terminal?.type === "terminal" && terminal.writeFn) {
+            terminal.writeFn(data);
+          }
         },
         "terminal:exited": ({ workspaceId: termId }) => {
-          if (splitPane?.id === termId) {
-            splitPane = null;
-            return;
-          }
-          closeTermTab(termId);
+          if (tiling.isClosing(termId)) return;
+          const result = tiling.close(termId, ws.id);
+          // Don't send terminal:destroy - backend already cleaned up on shell exit
         },
         "menu:open-settings": () => { /* TODO */ },
         "menu:new-file":      () => { /* TODO */ },
@@ -205,67 +214,33 @@
 
   new Electroview({ rpc: termRpc });
 
-  // ── Per-terminal RPC helpers ──────────────────────────────────────────────
-  function makeTermInput(termId: string) {
-    return (b64: string) =>
-      termRpc.send["terminal:input"]({ data: b64, workspaceId: termId });
+  // ── Terminal RPC helpers ──────────────────────────────────────────────────
+  function handleTermInput(termId: string, b64: string) {
+    if (tiling.isClosing(termId)) return;
+    termRpc.send["terminal:input"]({ data: b64, workspaceId: termId });
   }
-  function makeTermResize(termId: string) {
-    return (cols: number, rows: number) =>
-      termRpc.send["terminal:resize"]({ cols, rows, workspaceId: termId });
+  function handleTermResize(termId: string, cols: number, rows: number) {
+    if (tiling.isClosing(termId)) return;
+    termRpc.send["terminal:resize"]({ cols, rows, workspaceId: termId });
   }
-  function makeTermMounted(pane: TermPane) {
-    return (writeFn: (b64: string) => void) => {
-      pane.writeFn = writeFn;
-      termRpc.send["terminal:ready"]({ workspaceId: pane.id });
-    };
+  function handleTermMounted(termId: string, writeFn: (b64: string) => void) {
+    if (tiling.isClosing(termId)) return;
+    tiling.setWriteFn(termId, writeFn);
+    termRpc.send["terminal:ready"]({ workspaceId: termId });
   }
-
-  // ── Terminal tab management ───────────────────────────────────────────────
-  function addTermTab() {
-    const id = newTermId();
-    const pane: TermPane = { id, label: "zsh", writeFn: null };
-    termTabs = [...termTabs, pane];
-    activeTermId = id;
+  function handleSplit(termId: string, direction: "horizontal" | "vertical") {
+    tiling.split(termId, direction, ws.id);
   }
-
-  function closeTermTab(id: string) {
-    const idx = termTabs.findIndex(t => t.id === id);
-    if (idx < 0) return;
-    const rest = termTabs.filter(t => t.id !== id);
-    if (rest.length === 0) {
-      // Last tab: replace atomically with a fresh terminal (panel stays open).
-      const freshId = newTermId();
-      termTabs = [{ id: freshId, label: "zsh", writeFn: null }];
-      activeTermId = freshId;
-    } else {
-      termTabs = rest;
-      if (activeTermId === id) {
-        activeTermId = rest[Math.max(0, idx - 1)].id;
-      }
-    }
+  function handleCloseTerm(termId: string) {
+    if (tiling.isClosing(termId)) return;
+    // Send destroy FIRST, then update layout
+    termRpc.send["terminal:destroy"]({ workspaceId: termId });
+    tiling.close(termId, ws.id);
+  }
+  function handleActivateTerm(termId: string) {
+    tiling.setActive(termId);
   }
 
-  // ── Split management ──────────────────────────────────────────────────────
-  function doSplit(dir: "vertical" | "horizontal") {
-    if (splitPane !== null && splitDir === dir) {
-      // Same direction → close split
-      splitPane = null;
-      return;
-    }
-    if (splitPane === null) {
-      // Create new split terminal
-      const id = newTermId();
-      splitPane = { id, label: "zsh", writeFn: null };
-    }
-    splitDir = dir;
-  }
-
-  function closeSplit() {
-    splitPane = null;
-  }
-
-  // ── Panel maximize ────────────────────────────────────────────────────────
   function togglePanelMaximize() {
     bottomMaximized = !bottomMaximized;
   }
@@ -518,7 +493,6 @@
       >
 
         {#if ws.activeTool === "project"}
-          <!-- ── SIDEBAR (self-contained: owns its header + file dialog) ── -->
           <Sidebar
             expandedFolders={ws.expandedFolders}
             onToggleFolder={(key) => {
@@ -531,7 +505,9 @@
             onFileOpen={(path, name, icon, content) =>
               workspaceStore.openFile(path, name, icon, content)
             }
-            onProjectChange={(v) => (hasProject = v)}
+            workspaceId={ws.id}
+            projectRootName={ws.project.rootName}
+            projectFileNodes={ws.project.fileNodes}
           />
 
         {:else}
@@ -806,7 +782,6 @@
               <!--
                 Terminal: ALWAYS mounted so PTY sessions survive tab switches.
                 Hidden via CSS only (display:none) when another bottom tab is active.
-                Tabs use absolute+inset-0+invisible so xterm always has correct size.
               -->
               <!-- svelte-ignore a11y_click_events_have_key_events -->
               <!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -822,22 +797,22 @@
                 <div class="flex items-center bg-jb-panel h-[26px] border-b border-jb-border flex-shrink-0 px-1 gap-0 text-[11px] min-w-0 overflow-hidden">
 
                   <!-- Terminal tabs -->
-                  {#each termTabs as tab}
+                  {#each tiling.terminals as term (term.id)}
                     <!-- svelte-ignore a11y_click_events_have_key_events -->
                     <!-- svelte-ignore a11y_no_static_element_interactions -->
                     <div class="flex items-center group h-full flex-shrink-0">
                       <button
                         class="flex items-center gap-1 px-2 h-full bg-transparent border-none cursor-pointer text-[11px] border-b-2 transition-colors
-                          {activeTermId === tab.id
+                          {tiling.activeTerminalId === term.id
                             ? 'text-jb-text border-b-jb-blue'
                             : 'text-jb-muted border-b-transparent hover:text-jb-text hover:bg-jb-hover'}"
-                        onclick={() => (activeTermId = tab.id)}
-                      >{tab.label}</button>
-                      {#if termTabs.length > 1}
+                        onclick={() => tiling.setActive(term.id)}
+                      >{term.label}</button>
+                      {#if tiling.count > 1}
                         <button
                           class="w-[14px] h-[14px] flex items-center justify-center rounded bg-transparent border-none cursor-pointer text-jb-muted hover:text-jb-text hover:bg-jb-hover opacity-0 group-hover:opacity-100 text-[9px] -ml-1 mr-1 flex-shrink-0"
                           title="Close terminal"
-                          onclick={(e) => { e.stopPropagation(); closeTermTab(tab.id); }}
+                          onclick={(e) => { e.stopPropagation(); handleCloseTerm(term.id); }}
                         >✕</button>
                       {/if}
                     </div>
@@ -848,33 +823,9 @@
                     <!-- New terminal -->
                     <button
                       title="New terminal"
-                      onclick={addTermTab}
+                      onclick={() => { if (tiling.activeTerminal) handleSplit(tiling.activeTerminal.id, "vertical"); }}
                       class="w-6 h-6 flex items-center justify-center rounded text-jb-muted hover:bg-jb-hover hover:text-jb-text bg-transparent border-none cursor-pointer text-[13px]"
                     >＋</button>
-                    <!-- Split vertical (side by side) -->
-                    <button
-                      title={splitPane && splitDir === "vertical" ? "Close split" : "Split vertically"}
-                      onclick={() => doSplit("vertical")}
-                      class="w-6 h-6 flex items-center justify-center rounded hover:bg-jb-hover bg-transparent border-none cursor-pointer
-                        {splitPane && splitDir === 'vertical' ? 'text-jb-blue' : 'text-jb-muted hover:text-jb-text'}"
-                    >
-                      <svg viewBox="0 0 14 12" width="13" height="11">
-                        <rect x="0.5" y="0.5" width="5.5" height="11" rx="1" fill="none" stroke="currentColor" stroke-width="1.2"/>
-                        <rect x="8" y="0.5" width="5.5" height="11" rx="1" fill="none" stroke="currentColor" stroke-width="1.2"/>
-                      </svg>
-                    </button>
-                    <!-- Split horizontal (stacked) -->
-                    <button
-                      title={splitPane && splitDir === "horizontal" ? "Close split" : "Split horizontally"}
-                      onclick={() => doSplit("horizontal")}
-                      class="w-6 h-6 flex items-center justify-center rounded hover:bg-jb-hover bg-transparent border-none cursor-pointer
-                        {splitPane && splitDir === 'horizontal' ? 'text-jb-blue' : 'text-jb-muted hover:text-jb-text'}"
-                    >
-                      <svg viewBox="0 0 14 12" width="13" height="11">
-                        <rect x="0.5" y="0.5" width="13" height="4.5" rx="1" fill="none" stroke="currentColor" stroke-width="1.2"/>
-                        <rect x="0.5" y="7" width="13" height="4.5" rx="1" fill="none" stroke="currentColor" stroke-width="1.2"/>
-                      </svg>
-                    </button>
                     <!-- Fullscreen -->
                     <button
                       title={termFullscreen ? "Exit fullscreen" : "Fullscreen"}
@@ -884,58 +835,52 @@
                   </div>
                 </div>
 
-                <!-- ── Pane area: always flex so flex-1 children get proper height ── -->
-                <div
-                  class="flex-1 min-h-0 overflow-hidden flex"
-                  class:flex-col={splitPane !== null && splitDir === "horizontal"}
-                >
-                  <!-- All tab panes: always in DOM, switch via visibility.
-                       The (tab.id) key ensures Svelte unmounts the old Terminal
-                       and mounts a fresh one when the tab id changes (e.g. after
-                       exit), instead of reusing the dead xterm instance. -->
-                  <div class="flex-1 min-h-0 min-w-0 overflow-hidden relative">
-                    {#each termTabs as tab (tab.id)}
-                      <div
-                        class="absolute inset-0"
-                        class:invisible={tab.id !== activeTermId}
-                        class:pointer-events-none={tab.id !== activeTermId}
-                      >
-                        <Terminal
-                          onInput={makeTermInput(tab.id)}
-                          onResize={makeTermResize(tab.id)}
-                          onMounted={makeTermMounted(tab)}
-                        />
-                      </div>
-                    {/each}
-                  </div>
-
-                  <!-- Split pane (mounted only when active) -->
-                  {#if splitPane}
-                    <!-- Divider -->
-                    <div
-                      class="flex-shrink-0 bg-jb-border hover:bg-jb-blue transition-colors"
-                      class:w-[3px]={splitDir === "vertical"}
-                      class:h-[3px]={splitDir === "horizontal"}
-                      class:cursor-col-resize={splitDir === "vertical"}
-                      class:cursor-row-resize={splitDir === "horizontal"}
-                    ></div>
-                    <!-- Split terminal -->
-                    <div class="flex-1 min-h-0 min-w-0 overflow-hidden relative">
-                      <!-- Close split button -->
-                      <button
-                        title="Close split"
-                        onclick={closeSplit}
-                        class="absolute top-1 right-1 z-10 w-5 h-5 flex items-center justify-center rounded bg-jb-panel border-none cursor-pointer text-jb-muted hover:text-jb-text hover:bg-jb-hover text-[10px] opacity-0 hover:opacity-100 transition-opacity"
-                        style="opacity: 0"
-                        onmouseenter={(e) => (e.currentTarget as HTMLElement).style.opacity = "1"}
-                        onmouseleave={(e) => (e.currentTarget as HTMLElement).style.opacity = "0"}
-                      >✕</button>
-                      <Terminal
-                        onInput={makeTermInput(splitPane.id)}
-                        onResize={makeTermResize(splitPane.id)}
-                        onMounted={makeTermMounted(splitPane)}
-                      />
-                    </div>
+                <!-- ── Tiling pane area ── -->
+                <div class="flex-1 min-h-0 overflow-hidden relative">
+                  {#if tiling.root}
+                    {@const renderTerminal = (termId: string) => {
+                      const term = findNode(tiling.root, termId);
+                      return { termId, term };
+                    }}
+                    <TerminalLayout
+                      node={tiling.root}
+                      terminalIds={allTerminalIds}
+                      onActivate={handleActivateTerm}
+                    >
+                      {#snippet children(termId)}
+                        {@const term = findNode(tiling.root, termId)}
+                        <div class="flex flex-col h-full">
+                          <div class="terminal-toolbar flex items-center gap-1 px-1 py-0.5 bg-jb-panel2 border-b border-jb-border text-[10px] flex-shrink-0">
+                            <span class="text-jb-muted">{term?.type === "terminal" ? term.label : "zsh"}</span>
+                            <div class="flex-1"></div>
+                            <button
+                              title="Split vertical"
+                              onclick={(e) => { e.stopPropagation(); handleSplit(termId, "vertical"); }}
+                              class="w-5 h-5 flex items-center justify-center rounded text-jb-muted hover:bg-jb-hover hover:text-jb-text bg-transparent border-none cursor-pointer text-[9px]"
+                            >⎮</button>
+                            <button
+                              title="Split horizontal"
+                              onclick={(e) => { e.stopPropagation(); handleSplit(termId, "horizontal"); }}
+                              class="w-5 h-5 flex items-center justify-center rounded text-jb-muted hover:bg-jb-hover hover:text-jb-text bg-transparent border-none cursor-pointer text-[9px]"
+                            >⎯</button>
+                            {#if tiling.count > 1}
+                              <button
+                                title="Close"
+                                onclick={(e) => { e.stopPropagation(); handleCloseTerm(termId); }}
+                                class="w-5 h-5 flex items-center justify-center rounded text-jb-muted hover:bg-jb-hover hover:text-jb-text bg-transparent border-none cursor-pointer text-[9px]"
+                              >✕</button>
+                            {/if}
+                          </div>
+                          <div class="flex-1 min-h-0">
+                            <Terminal
+                              onInput={(b64) => handleTermInput(termId, b64)}
+                              onResize={(cols, rows) => handleTermResize(termId, cols, rows)}
+                              onMounted={(writeFn) => handleTermMounted(termId, writeFn)}
+                            />
+                          </div>
+                        </div>
+                      {/snippet}
+                    </TerminalLayout>
                   {/if}
                 </div>
               </div>
