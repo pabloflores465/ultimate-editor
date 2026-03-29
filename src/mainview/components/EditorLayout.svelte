@@ -736,14 +736,14 @@
           ></div>
         {/if}
 
-        <!-- Bottom panel content -->
-        {#if ws.bottomPanelOpen}
-          <div
-            class="bg-jb-bg border-t border-jb-border flex flex-col overflow-hidden"
-            class:flex-1={bottomMaximized}
-            class:flex-shrink-0={!bottomMaximized}
-            style:height={bottomMaximized ? undefined : `${ws.bottomHeight}px`}
-          >
+        <!-- Bottom panel content (always mounted, hidden via CSS to preserve PTY sessions) -->
+        <div
+          class="bg-jb-bg border-t border-jb-border flex flex-col overflow-hidden"
+          class:hidden={!ws.bottomPanelOpen}
+          class:flex-1={bottomMaximized}
+          class:flex-shrink-0={!bottomMaximized}
+          style:height={bottomMaximized ? undefined : `${ws.bottomHeight}px`}
+        >
             <!-- Panel tab bar -->
             <div class="flex items-center bg-jb-panel2 h-[30px] flex-shrink-0 border-b border-jb-border px-1 gap-0">
               {#each bottomTabs as pt}
@@ -930,7 +930,6 @@
 
             </div>
           </div><!-- end bottom panel -->
-        {/if}
 
       </div><!-- end editor + bottom panel -->
     </div><!-- end editor column -->
