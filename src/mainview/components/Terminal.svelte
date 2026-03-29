@@ -144,7 +144,11 @@
     padding: 0;
   }
   :global(.terminal-host .xterm-helper-textarea) {
-    display: none !important;
+    position: absolute;
+    opacity: 0;
+    width: 0;
+    height: 0;
+    z-index: -1;
   }
   :global(.terminal-host .xterm-viewport) {
     overflow-y: scroll !important;
