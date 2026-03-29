@@ -144,8 +144,25 @@
     padding: 0;
   }
   :global(.terminal-host .xterm-viewport) {
-    overflow-y: auto !important;
+    overflow-y: scroll !important;
     background-color: #1e1f22 !important;
+  }
+  :global(.terminal-host .xterm-viewport::-webkit-scrollbar) {
+    width: 10px;
+    height: 10px;
+  }
+  :global(.terminal-host .xterm-viewport::-webkit-scrollbar-track) {
+    background: #1e1f22;
+  }
+  :global(.terminal-host .xterm-viewport::-webkit-scrollbar-thumb) {
+    background: #4c5052;
+    border-radius: 5px;
+  }
+  :global(.terminal-host .xterm-viewport::-webkit-scrollbar-thumb:hover) {
+    background: #5c6062;
+  }
+  :global(.terminal-host .xterm-viewport::-webkit-scrollbar-corner) {
+    background: #1e1f22;
   }
   /* Forzar line-height compacto — sin espacio extra entre líneas */
   :global(.terminal-host .xterm-rows) {

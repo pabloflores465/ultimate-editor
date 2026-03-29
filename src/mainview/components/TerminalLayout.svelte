@@ -81,7 +81,7 @@
   {@const bounds = layoutMap.get(termId)}
   {#if bounds}
     <div
-      class="terminal-wrapper absolute overflow-hidden"
+      class="terminal-wrapper absolute"
       style:left="{bounds.x}%"
       style:top="{bounds.y}%"
       style:width="{bounds.w}%"
@@ -108,5 +108,6 @@
 <style>
   .terminal-wrapper {
     background: #1e1f22;
+    box-sizing: border-box;
   }
 </style>
