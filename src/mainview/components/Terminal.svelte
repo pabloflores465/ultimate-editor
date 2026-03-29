@@ -143,30 +143,36 @@
     height: 100%;
     padding: 0;
   }
+  :global(.terminal-host .xterm-helper-textarea) {
+    display: none !important;
+  }
   :global(.terminal-host .xterm-viewport) {
     overflow-y: scroll !important;
     overflow-x: scroll !important;
     background-color: #1e1f22 !important;
+    min-width: 100%;
   }
   :global(.terminal-host .xterm-viewport::-webkit-scrollbar) {
     width: 10px;
     height: 10px;
   }
   :global(.terminal-host .xterm-viewport::-webkit-scrollbar-track) {
-    background: #1e1f22;
+    background: #2b2d30;
   }
   :global(.terminal-host .xterm-viewport::-webkit-scrollbar-thumb) {
     background: #4c5052;
     border-radius: 5px;
+    border: 2px solid #2b2d30;
   }
   :global(.terminal-host .xterm-viewport::-webkit-scrollbar-thumb:hover) {
     background: #5c6062;
   }
   :global(.terminal-host .xterm-viewport::-webkit-scrollbar-corner) {
-    background: #1e1f22;
+    background: #2b2d30;
   }
   /* Forzar line-height compacto — sin espacio extra entre líneas */
   :global(.terminal-host .xterm-rows) {
     line-height: 1 !important;
+    min-width: max-content !important;
   }
 </style>
