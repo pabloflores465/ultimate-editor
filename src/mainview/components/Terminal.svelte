@@ -128,7 +128,8 @@
 </script>
 
 <!-- Wrapper fills whatever space its parent gives it -->
-<div bind:this={containerEl} class="terminal-host"></div>
+<!-- svelte-ignore a11y_no_static_element_interactions -->
+<div bind:this={containerEl} class="terminal-host" onclick={() => term?.focus()}></div>
 
 <style>
   .terminal-host {
