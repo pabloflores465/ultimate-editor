@@ -23,6 +23,7 @@
 
   // ── Transient UI state (not persisted per workspace) ─────────
   let resizingLeft   = $state(false);
+  let resizingRight  = $state(false);
   let resizingBottom = $state(false);
   let runConfigOpen  = $state(false);
   let hamburgerOpen  = $state(false);
@@ -119,6 +120,12 @@
         const w = e.clientX - 25; // 25 = left strip width
         if (w > 150 && w < 550) onUpdate({ leftWidth: w });
       }
+      if (resizingRight) {
+        const root = document.getElementById("jb-root");
+        if (!root) return;
+        const w = root.getBoundingClientRect().right - e.clientX - 25; // 25 = right strip width
+        if (w > 150 && w < 550) onUpdate({ rightWidth: w });
+      }
       if (resizingBottom) {
         const root = document.getElementById("jb-root");
         if (!root) return;
@@ -126,7 +133,7 @@
         if (newH > 60 && newH < 550) onUpdate({ bottomHeight: newH });
       }
     };
-    const onUp = () => { resizingLeft = false; resizingBottom = false; };
+    const onUp = () => { resizingLeft = false; resizingRight = false; resizingBottom = false; };
     window.addEventListener("mousemove", onMove);
     window.addEventListener("mouseup", onUp);
     return () => {
@@ -271,7 +278,7 @@
 <div
   id="jb-root"
   class="flex flex-col w-screen h-screen bg-jb-bg text-jb-text overflow-hidden text-[13px]"
-  style:cursor={resizingLeft ? "col-resize" : resizingBottom ? "row-resize" : "default"}
+  style:cursor={resizingLeft || resizingRight ? "col-resize" : resizingBottom ? "row-resize" : "default"}
 >
 
   <!-- ══ TITLE BAR ══════════════════════════════════════════ -->
@@ -946,6 +953,42 @@
       </div><!-- end editor + bottom panel -->
     </div><!-- end editor column -->
 
+    <!-- ── RIGHT TOOL WINDOW ── -->
+    {#if ws.rightPanelOpen}
+      <div
+        class="flex flex-col bg-jb-panel border-l border-jb-border flex-shrink-0 min-h-0 relative"
+        style:width="{ws.rightWidth}px"
+      >
+        <div class="flex items-center justify-between px-2 h-[30px] bg-jb-panel2 border-b border-jb-border flex-shrink-0">
+          <span class="text-[12px] font-semibold text-jb-text2">Database</span>
+          <div class="flex items-center gap-0.5">
+            <button
+              title="Hide"
+              onclick={() => onUpdate({ rightPanelOpen: false })}
+              class="w-5 h-5 flex items-center justify-center rounded text-jb-muted hover:bg-jb-hover hover:text-jb-text bg-transparent border-none cursor-pointer text-[11px]"
+            >✕</button>
+          </div>
+        </div>
+        <div class="flex-1 overflow-y-auto overflow-x-hidden min-h-0 py-1">
+          <div class="px-3 py-2 text-[12px] text-jb-muted">
+            No database connections configured.
+          </div>
+        </div>
+        <div
+          class="absolute left-0 top-0 bottom-0 w-1 cursor-col-resize z-10 hover:bg-jb-blue"
+          role="slider"
+          aria-orientation="vertical"
+          aria-label="Resize right panel"
+          aria-valuenow={ws.rightWidth}
+          aria-valuemin={150}
+          aria-valuemax={550}
+          tabindex="0"
+          onmousedown={(e) => { resizingRight = true; e.preventDefault(); }}
+          style="left:-2px; position:absolute; top:0; bottom:0; width:4px;"
+        ></div>
+      </div>
+    {/if}
+
     <!-- ── RIGHT TOOL STRIP ── -->
     <div class="flex flex-col justify-between bg-jb-panel border-l border-jb-border flex-shrink-0 w-[25px]">
       <div class="flex flex-col items-center pt-1">
@@ -968,21 +1011,49 @@
 
   </div><!-- end body -->
 
-  <!-- ══ BOTTOM TOOL STRIP ══════════════════════════════════ -->
+  <!-- ══ BOTTOM TOOL STRIP ════════════════════════════════════ -->
   <div class="flex items-center h-[27px] bg-jb-panel border-t border-jb-border flex-shrink-0 px-1">
-    <button
-      title={ws.bottomPanelOpen ? "Close bottom panel" : "Open bottom panel"}
-      class="flex items-center gap-1.5 px-2.5 h-full text-[12px] font-medium border-none bg-transparent cursor-pointer transition-colors
-        {ws.bottomPanelOpen
-          ? 'text-jb-text2 bg-jb-hover'
-          : 'text-jb-muted hover:text-jb-text hover:bg-jb-hover'}"
-      onclick={() => onUpdate({ bottomPanelOpen: !ws.bottomPanelOpen })}
-    >
-      <svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.2">
-        <rect x="1.5" y="1.5" width="13" height="13" rx="1.5"/>
-        <line x1="1.5" y1="10" x2="14.5" y2="10"/>
-      </svg>
-    </button>
+    <div class="flex items-center gap-0.5">
+      <button
+        title={ws.leftPanelOpen ? "Hide left sidebar" : "Show left sidebar"}
+        class="flex items-center justify-center w-[26px] h-[22px] text-[12px] font-medium border-none bg-transparent cursor-pointer transition-colors rounded
+          {ws.leftPanelOpen
+            ? 'text-jb-text2 bg-jb-hover'
+            : 'text-jb-muted hover:text-jb-text hover:bg-jb-hover'}"
+        onclick={() => onUpdate({ leftPanelOpen: !ws.leftPanelOpen })}
+      >
+        <svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.2">
+          <rect x="1.5" y="1.5" width="13" height="13" rx="1.5"/>
+          <line x1="5" y1="1.5" x2="5" y2="14.5"/>
+        </svg>
+      </button>
+      <button
+        title={ws.bottomPanelOpen ? "Hide bottom panel" : "Show bottom panel"}
+        class="flex items-center justify-center w-[26px] h-[22px] text-[12px] font-medium border-none bg-transparent cursor-pointer transition-colors rounded
+          {ws.bottomPanelOpen
+            ? 'text-jb-text2 bg-jb-hover'
+            : 'text-jb-muted hover:text-jb-text hover:bg-jb-hover'}"
+        onclick={() => onUpdate({ bottomPanelOpen: !ws.bottomPanelOpen })}
+      >
+        <svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.2">
+          <rect x="1.5" y="1.5" width="13" height="13" rx="1.5"/>
+          <line x1="1.5" y1="10" x2="14.5" y2="10"/>
+        </svg>
+      </button>
+      <button
+        title={ws.rightPanelOpen ? "Hide right sidebar" : "Show right sidebar"}
+        class="flex items-center justify-center w-[26px] h-[22px] text-[12px] font-medium border-none bg-transparent cursor-pointer transition-colors rounded
+          {ws.rightPanelOpen
+            ? 'text-jb-text2 bg-jb-hover'
+            : 'text-jb-muted hover:text-jb-text hover:bg-jb-hover'}"
+        onclick={() => onUpdate({ rightPanelOpen: !ws.rightPanelOpen })}
+      >
+        <svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.2">
+          <rect x="1.5" y="1.5" width="13" height="13" rx="1.5"/>
+          <line x1="11" y1="1.5" x2="11" y2="14.5"/>
+        </svg>
+      </button>
+    </div>
     <div class="flex-1"></div>
   </div>
 

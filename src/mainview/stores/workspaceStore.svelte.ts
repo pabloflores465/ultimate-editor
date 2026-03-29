@@ -30,10 +30,12 @@ export interface WorkspaceState {
   id: string;
   name: string;
   leftPanelOpen: boolean;
+  rightPanelOpen: boolean;
   bottomPanelOpen: boolean;
   activeTool: string;
   activeBottom: string;
   leftWidth: number;
+  rightWidth: number;
   bottomHeight: number;
   expandedFolders: Record<string, boolean>;
   activeRoute: string;
@@ -50,10 +52,12 @@ function createWorkspace(name: string): WorkspaceState {
     id: crypto.randomUUID(),
     name,
     leftPanelOpen: true,
+    rightPanelOpen: false,
     bottomPanelOpen: true,
     activeTool: "project",
     activeBottom: "terminal",
     leftWidth: 248,
+    rightWidth: 250,
     bottomHeight: 190,
     expandedFolders: {
       src: true, mainview: true, pages: true, components: false, bun: false,
