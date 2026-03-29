@@ -52,7 +52,7 @@ function createWorkspace(name: string): WorkspaceState {
     id: crypto.randomUUID(),
     name,
     leftPanelOpen: true,
-    rightPanelOpen: false,
+    rightPanelOpen: true,
     bottomPanelOpen: true,
     activeTool: "project",
     activeBottom: "terminal",

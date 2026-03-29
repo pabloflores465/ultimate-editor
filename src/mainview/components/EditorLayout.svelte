@@ -4,6 +4,7 @@
   import Sidebar from "./Sidebar.svelte";
   import Terminal from "./Terminal.svelte";
   import CodeEditor from "./CodeEditor.svelte";
+  import ChatPanel from "./ChatPanel.svelte";
   import type { WorkspaceState } from "../stores/workspaceStore.svelte";
   import { workspaceStore } from "../stores/workspaceStore.svelte";
   import { Electroview } from "electrobun/view";
@@ -953,27 +954,22 @@
       </div><!-- end editor + bottom panel -->
     </div><!-- end editor column -->
 
-    <!-- ── RIGHT TOOL WINDOW ── -->
+    <!-- ── RIGHT TOOL WINDOW (AI Chat) ── -->
     {#if ws.rightPanelOpen}
       <div
         class="flex flex-col bg-jb-panel border-l border-jb-border flex-shrink-0 min-h-0 relative"
         style:width="{ws.rightWidth}px"
       >
-        <div class="flex items-center justify-between px-2 h-[30px] bg-jb-panel2 border-b border-jb-border flex-shrink-0">
-          <span class="text-[12px] font-semibold text-jb-text2">Database</span>
-          <div class="flex items-center gap-0.5">
-            <button
-              title="Hide"
-              onclick={() => onUpdate({ rightPanelOpen: false })}
-              class="w-5 h-5 flex items-center justify-center rounded text-jb-muted hover:bg-jb-hover hover:text-jb-text bg-transparent border-none cursor-pointer text-[11px]"
-            >✕</button>
-          </div>
-        </div>
-        <div class="flex-1 overflow-y-auto overflow-x-hidden min-h-0 py-1">
-          <div class="px-3 py-2 text-[12px] text-jb-muted">
-            No database connections configured.
-          </div>
-        </div>
+        <ChatPanel
+          onClose={() => onUpdate({ rightPanelOpen: false })}
+          activeTab={activeTab ? { path: activeTab.path, name: activeTab.name, content: activeTab.content } : null}
+          onApplyDiff={(diff) => {
+            console.log("Apply diff:", diff);
+          }}
+          onRejectDiff={(diff) => {
+            console.log("Reject diff:", diff);
+          }}
+        />
         <div
           class="absolute left-0 top-0 bottom-0 w-1 cursor-col-resize z-10 hover:bg-jb-blue"
           role="slider"
@@ -993,13 +989,23 @@
     <div class="flex flex-col justify-between bg-jb-panel border-l border-jb-border flex-shrink-0 w-[25px]">
       <div class="flex flex-col items-center pt-1">
         {#each [
-          { id:"database",  num:"5", label:"Database" },
-          { id:"gradle",    num:"6", label:"npm" },
+          { id:"chat",      num:"5", label:"AI Chat" },
+          { id:"npm",       num:"6", label:"npm" },
           { id:"endpoints", num:"7", label:"Endpoints" },
         ] as rt}
           <button
             title={rt.label}
-            class="flex items-center justify-center px-1 py-2.5 text-[11px] cursor-pointer border-none bg-transparent w-full text-jb-muted hover:text-jb-text hover:bg-jb-hover"
+            onclick={() => {
+              if (ws.rightPanelOpen) {
+                onUpdate({ rightPanelOpen: false });
+              } else {
+                onUpdate({ rightPanelOpen: true });
+              }
+            }}
+            class="flex items-center justify-center px-1 py-2.5 text-[11px] cursor-pointer border-none bg-transparent w-full
+              {rt.id === 'chat' && ws.rightPanelOpen
+                ? 'text-jb-text2 bg-jb-active'
+                : 'text-jb-muted hover:text-jb-text hover:bg-jb-hover'}"
           >
             <span class="[writing-mode:vertical-rl] font-medium tracking-wide whitespace-nowrap leading-none text-[11px]">
               {rt.num}: {rt.label}
