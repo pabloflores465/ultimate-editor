@@ -739,10 +739,11 @@
         <!-- Bottom panel content (always mounted, hidden via CSS to preserve PTY sessions) -->
         <div
           class="bg-jb-bg border-t border-jb-border flex flex-col overflow-hidden"
-          class:hidden={!ws.bottomPanelOpen}
-          class:flex-1={bottomMaximized}
-          class:flex-shrink-0={!bottomMaximized}
-          style:height={bottomMaximized ? undefined : `${ws.bottomHeight}px`}
+          class:flex-1={bottomMaximized && ws.bottomPanelOpen}
+          class:flex-shrink-0={!bottomMaximized || !ws.bottomPanelOpen}
+          style={ws.bottomPanelOpen
+            ? (bottomMaximized ? '' : `height:${ws.bottomHeight}px`)
+            : 'visibility:hidden;height:0;overflow:hidden'}
         >
             <!-- Panel tab bar -->
             <div class="flex items-center bg-jb-panel2 h-[30px] flex-shrink-0 border-b border-jb-border px-1 gap-0">

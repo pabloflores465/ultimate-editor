@@ -104,24 +104,6 @@
     });
     ro.observe(containerEl);
 
-    // Re-fit and focus when terminal becomes visible after display:none toggle
-    const io = new IntersectionObserver((entries) => {
-      if (!mounted || !term || !fitAddon) return;
-      if (entries[0]?.isIntersecting) {
-        requestAnimationFrame(() => {
-          if (!mounted || !term || !fitAddon) return;
-          fitAddon.fit();
-          if (term.cols !== lastCols || term.rows !== lastRows) {
-            lastCols = term.cols;
-            lastRows = term.rows;
-            onResize(term.cols, term.rows);
-          }
-          term.focus();
-        });
-      }
-    });
-    io.observe(containerEl);
-
     // Expose write function to parent AFTER fit+resize so that the backend
     // already has the correct PTY dimensions before we signal readiness.
     // EditorLayout's onMounted handler stores writeFn and calls sendTermReady().
@@ -134,7 +116,6 @@
       mounted = false;
       clearTimeout(resizeTimer);
       ro.disconnect();
-      io.disconnect();
       term?.dispose();
       term = undefined;
       fitAddon = undefined;
@@ -147,7 +128,7 @@
 </script>
 
 <!-- Wrapper fills whatever space its parent gives it -->
-<div bind:this={containerEl} class="terminal-host" onclick={() => term?.focus()}></div>
+<div bind:this={containerEl} class="terminal-host"></div>
 
 <style>
   .terminal-host {
