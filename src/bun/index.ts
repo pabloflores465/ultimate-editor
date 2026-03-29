@@ -77,9 +77,11 @@ const rpc = BrowserView.defineRPC<AppSchema>({
   handlers: {
     messages: {
       "terminal:input": ({ data, workspaceId }) => {
+        console.log(`[index.ts] terminal:input received for ${workspaceId}`);
         writeToTty(workspaceId, data);
       },
       "terminal:resize": ({ cols, rows, workspaceId }) => {
+        console.log(`[index.ts] terminal:resize received for ${workspaceId}`);
         // Always save the latest dimensions so terminal:ready can replay them
         // if the session doesn't exist yet.
         pendingResize.set(workspaceId, { cols, rows });
@@ -111,6 +113,7 @@ const rpc = BrowserView.defineRPC<AppSchema>({
         flushWorkspaceBuffer(workspaceId);
       },
       "terminal:destroy": ({ workspaceId }) => {
+        console.log(`[index.ts] terminal:destroy received for ${workspaceId}`);
         // Clean up terminal session when user closes a pane
         workspaceReady.delete(workspaceId);
         workspaceBuffers.delete(workspaceId);

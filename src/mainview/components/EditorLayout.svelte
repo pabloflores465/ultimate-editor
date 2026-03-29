@@ -165,17 +165,12 @@
   import TerminalLayout from "./TerminalLayout.svelte";
   let tiling = new TilingStore();
 
-  // Track all terminal IDs that have ever been created (for stable rendering)
-  let allTerminalIds = $state<string[]>([]);
+  // Separate map for write functions - more stable than storing in tree nodes
+  let terminalWriteFns = new Map<string, (b64: string) => void>();
+  console.log(`[EditorLayout] Created new terminalWriteFns Map`);
 
-  // Sync allTerminalIds with tiling.terminals
-  $effect(() => {
-    const currentIds = tiling.terminals.map(t => t.id);
-    if (currentIds.length !== allTerminalIds.length || 
-        !currentIds.every((id, i) => id === allTerminalIds[i])) {
-      allTerminalIds = currentIds;
-    }
-  });
+  // Track all terminal IDs derived directly from tiling tree
+  let allTerminalIds = $derived(tiling.terminals.map(t => t.id));
 
   // Bottom panel maximize
   let bottomMaximized = $state(false);
@@ -185,7 +180,7 @@
   $effect(() => {
     if (ws.bottomPanelOpen && ws.activeBottom === "terminal" && !tiling.root) {
       const id = tiling.init(ws.id);
-      allTerminalIds = [id];
+      console.log(`[EditorLayout] Initialized tiling with terminal ${id}`);
     }
   });
 
@@ -193,16 +188,21 @@
     handlers: {
       messages: {
         "terminal:output": ({ data, workspaceId: termId }) => {
-          if (tiling.isClosing(termId)) return;
-          const terminal = findNode(tiling.root, termId);
-          if (terminal?.type === "terminal" && terminal.writeFn) {
-            terminal.writeFn(data);
+          if (tiling.isClosing(termId)) {
+            console.log(`[EditorLayout] terminal:output for ${termId} but isClosing, skipping`);
+            return;
+          }
+          const writeFn = terminalWriteFns.get(termId);
+          console.log(`[EditorLayout] terminal:output for ${termId}, hasWriteFn: ${!!writeFn}`);
+          if (writeFn) {
+            writeFn(data);
           }
         },
         "terminal:exited": ({ workspaceId: termId }) => {
+          console.log(`[EditorLayout] terminal:exited for ${termId}, isClosing: ${tiling.isClosing(termId)}`);
           if (tiling.isClosing(termId)) return;
+          terminalWriteFns.delete(termId);
           const result = tiling.close(termId, ws.id);
-          // Don't send terminal:destroy - backend already cleaned up on shell exit
         },
         "menu:open-settings": () => { /* TODO */ },
         "menu:new-file":      () => { /* TODO */ },
@@ -216,8 +216,17 @@
 
   // ── Terminal RPC helpers ──────────────────────────────────────────────────
   function handleTermInput(termId: string, b64: string) {
-    if (tiling.isClosing(termId)) return;
-    termRpc.send["terminal:input"]({ data: b64, workspaceId: termId });
+    if (tiling.isClosing(termId)) {
+      console.log(`[EditorLayout] handleTermInput for ${termId} but isClosing, skipping`);
+      return;
+    }
+    console.log(`[EditorLayout] handleTermInput for ${termId}, sending to backend...`);
+    try {
+      termRpc.send["terminal:input"]({ data: b64, workspaceId: termId });
+      console.log(`[EditorLayout] handleTermInput for ${termId}, sent!`);
+    } catch (e) {
+      console.error(`[EditorLayout] handleTermInput for ${termId} ERROR:`, e);
+    }
   }
   function handleTermResize(termId: string, cols: number, rows: number) {
     if (tiling.isClosing(termId)) return;
@@ -225,15 +234,20 @@
   }
   function handleTermMounted(termId: string, writeFn: (b64: string) => void) {
     if (tiling.isClosing(termId)) return;
-    tiling.setWriteFn(termId, writeFn);
+    console.log(`[EditorLayout] handleTermMounted for ${termId}`);
+    terminalWriteFns.set(termId, writeFn);
     termRpc.send["terminal:ready"]({ workspaceId: termId });
   }
   function handleSplit(termId: string, direction: "horizontal" | "vertical") {
+    console.log(`[EditorLayout] handleSplit ${direction} for ${termId}`);
     tiling.split(termId, direction, ws.id);
   }
   function handleCloseTerm(termId: string) {
     if (tiling.isClosing(termId)) return;
-    // Send destroy FIRST, then update layout
+    console.log(`[EditorLayout] handleCloseTerm for ${termId}`);
+    console.log(`[EditorLayout] terminalWriteFns keys before delete: ${Array.from(terminalWriteFns.keys()).join(', ')}`);
+    terminalWriteFns.delete(termId);
+    console.log(`[EditorLayout] terminalWriteFns keys after delete: ${Array.from(terminalWriteFns.keys()).join(', ')}`);
     termRpc.send["terminal:destroy"]({ workspaceId: termId });
     tiling.close(termId, ws.id);
   }
@@ -870,6 +884,7 @@
                           </div>
                           <div class="flex-1 min-h-0">
                             <Terminal
+                              id={termId}
                               onInput={(b64) => handleTermInput(termId, b64)}
                               onResize={(cols, rows) => handleTermResize(termId, cols, rows)}
                               onMounted={(writeFn) => handleTermMounted(termId, writeFn)}

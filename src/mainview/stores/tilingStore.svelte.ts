@@ -16,7 +16,6 @@ export interface TerminalNode {
   type: "terminal";
   id: string;
   label: string;
-  writeFn: ((b64: string) => void) | null;
 }
 
 export interface SplitNode {
@@ -36,7 +35,7 @@ export function generateTermId(prefix: string): string {
 }
 
 export function createTerminal(id: string, label = "zsh"): TerminalNode {
-  return { type: "terminal", id, label, writeFn: null };
+  return { type: "terminal", id, label };
 }
 
 export function createSplit(
@@ -127,25 +126,6 @@ export function closeNode(root: TilingNode | null, targetId: string): { node: Ti
   return { node: root, removed: false };
 }
 
-export function updateWriteFn(
-  root: TilingNode | null,
-  terminalId: string,
-  writeFn: (b64: string) => void
-): TilingNode | null {
-  if (!root) return null;
-  if (root.type === "terminal") {
-    if (root.id === terminalId) {
-      return { ...root, writeFn };
-    }
-    return root;
-  }
-  return {
-    ...root,
-    first: updateWriteFn(root.first, terminalId, writeFn) ?? root.first,
-    second: updateWriteFn(root.second, terminalId, writeFn) ?? root.second,
-  };
-}
-
 export function countTerminals(root: TilingNode | null): number {
   if (!root) return 0;
   if (root.type === "terminal") return 1;
@@ -175,7 +155,11 @@ export class TilingStore {
   }
 
   isClosing(id: string): boolean {
-    return this.closingIds.has(id);
+    const result = this.closingIds.has(id);
+    if (result) {
+      console.log(`[TilingStore] isClosing(${id}) = true, closingIds: ${Array.from(this.closingIds).join(', ')}`);
+    }
+    return result;
   }
 
   init(prefix: string): string {
@@ -198,61 +182,64 @@ export class TilingStore {
   }
 
   close(terminalId: string, prefix: string): CloseResult {
+    console.log(`[TilingStore] close called for ${terminalId}`);
     if (!this.root) return { closedId: null, newTerminalId: null };
-    if (this.closingIds.has(terminalId)) return { closedId: null, newTerminalId: null };
+    if (this.closingIds.has(terminalId)) {
+      console.log(`[TilingStore] close for ${terminalId} already in closingIds, skipping`);
+      return { closedId: null, newTerminalId: null };
+    }
+
+    this.closingIds.add(terminalId);
 
     const terminalsBefore = countTerminals(this.root);
+    console.log(`[TilingStore] terminals before close: ${terminalsBefore}`);
 
     if (terminalsBefore === 1) {
       const oldNode = this.root as TerminalNode;
       const oldId = oldNode.id;
       
-      this.closingIds.add(oldId);
-      
       const newId = generateTermId(prefix);
       this.root = createTerminal(newId);
       this.activeTerminalId = newId;
+      console.log(`[TilingStore] was only terminal, created new ${newId}`);
       
-      this.closingIds.delete(oldId);
+      setTimeout(() => this.closingIds.delete(oldId), 100);
       return { closedId: oldId, newTerminalId: newId };
     }
 
     const result = closeNode(this.root, terminalId);
     
     if (!result.removed) {
+      this.closingIds.delete(terminalId);
       return { closedId: null, newTerminalId: null };
     }
 
-    this.closingIds.add(terminalId);
-
     const remaining = result.node ? countTerminals(result.node) : 0;
+    console.log(`[TilingStore] terminals after close: ${remaining}`);
 
     if (remaining === 0) {
       const newId = generateTermId(prefix);
       this.root = createTerminal(newId);
       this.activeTerminalId = newId;
-      this.closingIds.delete(terminalId);
+      setTimeout(() => this.closingIds.delete(terminalId), 100);
       return { closedId: terminalId, newTerminalId: newId };
     }
 
     this.root = result.node!;
+    console.log(`[TilingStore] remaining terminal IDs: ${findAllTerminals(this.root).map(t => t.id).join(', ')}`);
 
     if (this.activeTerminalId === terminalId) {
       const terminals = findAllTerminals(this.root);
       this.activeTerminalId = terminals[0]?.id ?? "";
+      console.log(`[TilingStore] set activeTerminalId to ${this.activeTerminalId}`);
     }
 
-    this.closingIds.delete(terminalId);
+    setTimeout(() => this.closingIds.delete(terminalId), 100);
     return { closedId: terminalId, newTerminalId: null };
   }
 
   setActive(terminalId: string): void {
     this.activeTerminalId = terminalId;
-  }
-
-  setWriteFn(terminalId: string, writeFn: (b64: string) => void): void {
-    if (this.closingIds.has(terminalId)) return;
-    this.root = updateWriteFn(this.root, terminalId, writeFn);
   }
 
   reset(prefix: string): string {

@@ -6,11 +6,13 @@
 
   // ── Props ──────────────────────────────────────────────────────────────────
   let {
+    id,
     onInput,
     onResize,
     onMounted,
     fullscreen = $bindable(false),
   }: {
+    id: string;
     onInput: (b64: string) => void;
     onResize: (cols: number, rows: number) => void;
     onMounted: (writeFn: (b64: string) => void) => void;
@@ -96,6 +98,7 @@
         if (!mounted || !fitAddon || !term) return;
         fitAddon.fit();
         if (term.cols !== lastCols || term.rows !== lastRows) {
+          console.log(`[Terminal ${id}] ResizeObserver: ${lastCols}x${lastRows} -> ${term.cols}x${term.rows}`);
           lastCols = term.cols;
           lastRows = term.rows;
           onResize(term.cols, term.rows);
@@ -104,15 +107,19 @@
     });
     ro.observe(containerEl);
 
-    // Expose write function to parent AFTER fit+resize so that the backend
-    // already has the correct PTY dimensions before we signal readiness.
-    // EditorLayout's onMounted handler stores writeFn and calls sendTermReady().
-    onMounted((b64: string) => {
-      if (!mounted || !term) return;
+    const writeFn = (b64: string) => {
+      if (!mounted || !term) {
+        console.log(`[Terminal] write called but not mounted`);
+        return;
+      }
       term.write(Uint8Array.from(atob(b64), (c) => c.charCodeAt(0)));
-    });
+    };
+
+    console.log(`[Terminal ${id}] onMount complete, exposing writeFn`);
+    onMounted(writeFn);
 
     return () => {
+      console.log(`[Terminal ${id}] cleanup running`);
       mounted = false;
       clearTimeout(resizeTimer);
       ro.disconnect();

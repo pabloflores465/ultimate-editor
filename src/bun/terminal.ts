@@ -197,6 +197,7 @@ function spawnShell(workspaceId: string): void {
 
   function flush(): void {
     if (pending !== null && !sessionRef.destroyed) {
+      console.log(`[terminal.ts] flush output for ${workspaceId}, ${pending.length} bytes`);
       send(pending.toString("base64"));
       pending = null;
     }
@@ -227,6 +228,7 @@ function spawnShell(workspaceId: string): void {
     });
   }
 
+  console.log(`[terminal.ts] Starting readLoop for ${workspaceId}`);
   readLoop();
 }
 
@@ -242,24 +244,27 @@ export function createTerminalForWorkspace(
   send: (b64: string) => void,
   onExit: () => void,
 ): void {
+  console.log(`[terminal.ts] createTerminalForWorkspace for ${workspaceId}`);
   // Destroy any existing session for this workspace first
   destroyTerminal(workspaceId);
 
   const pty = createPty();
   sessions.set(workspaceId, {
     masterFd: pty.masterFd,
-    slaveFd:  pty.slaveFd,
+    slaveFd: pty.slaveFd,
     shellSpawned: false,
     sendFn: send,
     exitFn: onExit,
     childProcess: null,
     destroyed: false,
   });
+  console.log(`[terminal.ts] Created session for ${workspaceId}, total sessions: ${sessions.size}`);
 }
 
 /** Escribe bytes de entrada del usuario (base64) al PTY master de un workspace. */
 export function writeToTty(workspaceId: string, b64: string): void {
   const session = sessions.get(workspaceId);
+  console.log(`[terminal.ts] writeToTty for ${workspaceId}, session exists: ${!!session}, shellSpawned: ${session?.shellSpawned}, destroyed: ${session?.destroyed}`);
   if (!session || session.masterFd < 0 || !session.shellSpawned || session.destroyed) return;
   try {
     writeSync(session.masterFd, Buffer.from(b64, "base64"));
@@ -275,6 +280,7 @@ export function writeToTty(workspaceId: string, b64: string): void {
  */
 export function resizePty(workspaceId: string, cols: number, rows: number): void {
   const session = sessions.get(workspaceId);
+  console.log(`[terminal.ts] resizePty for ${workspaceId} to ${cols}x${rows}, session exists: ${!!session}`);
   if (!session || session.masterFd < 0 || session.destroyed) return;
   setWinSize(session.masterFd, cols, rows);
 
@@ -290,16 +296,17 @@ export function resizePty(workspaceId: string, cols: number, rows: number): void
  */
 export function destroyTerminal(workspaceId: string): void {
   const session = sessions.get(workspaceId);
-  if (!session) return;
+  if (!session) {
+    console.log(`[terminal.ts] destroyTerminal for ${workspaceId} - no session found`);
+    return;
+  }
 
-  // Mark as destroyed first to prevent callbacks
+  console.log(`[terminal.ts] destroyTerminal for ${workspaceId}, NOT closing fds, just marking destroyed`);
   session.destroyed = true;
 
-  // Kill the child process if running
   if (session.childProcess && session.childProcess.pid) {
     try {
       process.kill(session.childProcess.pid, "SIGTERM");
-      // Give it a moment to exit gracefully, then force kill
       setTimeout(() => {
         try {
           if (session.childProcess?.pid) {
@@ -307,18 +314,17 @@ export function destroyTerminal(workspaceId: string): void {
           }
         } catch {}
       }, 100);
-    } catch {
-      // Process might already be dead
-    }
+    } catch {}
   }
 
-  // Close file descriptors
-  try {
-    if (session.masterFd >= 0) closeSync(session.masterFd);
-  } catch {}
-  try {
-    if (session.slaveFd >= 0) closeSync(session.slaveFd);
-  } catch {}
+  // DON'T close file descriptors - this might be breaking RPC
+  // try {
+  //   if (session.masterFd >= 0) closeSync(session.masterFd);
+  // } catch {}
+  // try {
+  //   if (session.slaveFd >= 0) closeSync(session.slaveFd);
+  // } catch {}
 
   sessions.delete(workspaceId);
+  console.log(`[terminal.ts] destroyTerminal done, sessions now: ${sessions.size}, keys: ${Array.from(sessions.keys()).join(', ')}`);
 }
