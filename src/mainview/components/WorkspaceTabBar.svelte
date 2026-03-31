@@ -59,6 +59,10 @@
 </script>
 
 <div class="tab-bar">
+  <!-- macOS traffic-light spacer: -webkit-app-region:drag fills this area,
+       the OS overlays the close/minimise/maximise buttons here. -->
+  <div class="traffic-light-spacer"></div>
+
   <button
     class="tab-add"
     onclick={() => workspaceStore.addWorkspace()}
@@ -132,15 +136,26 @@
 </div>
 
 <style>
+  /* ── Client-side decorations (CSD) ────────────────────────
+     The whole tab bar is a drag region; buttons opt out via no-drag.
+     With titleBarStyle:"hiddenInset" the OS renders traffic lights
+     at ~(8,7) inside the window — the spacer reserves that area.  */
   .tab-bar {
     display: flex;
     align-items: stretch;
     background: #1e1f22;
     border-bottom: 1px solid #2d2f33;
-    height: 34px;
+    height: 38px;
     flex-shrink: 0;
     overflow: hidden;
     user-select: none;
+    -webkit-app-region: drag;
+  }
+
+  .traffic-light-spacer {
+    width: 76px;
+    flex-shrink: 0;
+    -webkit-app-region: drag;
   }
 
   .tabs {
@@ -151,6 +166,7 @@
     flex: 1;
     min-width: 0;
     scrollbar-width: none;
+    -webkit-app-region: no-drag;
   }
   .tabs::-webkit-scrollbar { display: none; }
 
@@ -161,7 +177,7 @@
     padding: 0 10px 0 14px;
     min-width: 100px;
     max-width: 200px;
-    height: 34px;
+    height: 38px;
     cursor: pointer;
     border-right: 1px solid #2d2f33;
     color: #7e8185;
@@ -257,8 +273,8 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 52px;
-    height: 34px;
+    width: 38px;
+    height: 38px;
     border: none;
     background: transparent;
     color: #7e8185;
@@ -267,6 +283,7 @@
     flex-shrink: 0;
     transition: background 100ms ease, color 100ms ease;
     border-right: 1px solid #2d2f33;
+    -webkit-app-region: no-drag;
   }
 
   .tab-add:hover {
@@ -279,7 +296,7 @@
     align-items: center;
     gap: 5px;
     padding: 0 10px;
-    height: 34px;
+    height: 38px;
     border: none;
     border-left: 1px solid #2d2f33;
     background: transparent;
@@ -290,6 +307,7 @@
     flex-shrink: 0;
     white-space: nowrap;
     transition: background 100ms ease, color 100ms ease;
+    -webkit-app-region: no-drag;
   }
 
   .tab-ws:hover {

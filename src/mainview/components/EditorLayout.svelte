@@ -318,18 +318,14 @@
   style:cursor={resizingLeft || resizingRight ? "col-resize" : resizingBottom ? "row-resize" : "default"}
 >
 
-  <!-- ══ TITLE BAR ══════════════════════════════════════════ -->
-  <!-- 3-column layout: [left nav] [title] [right spacer]
-       Left and right are flex-1 so the title stays centered.
-       overflow-hidden on the left column prevents any nav bleed. -->
-  <header class="titlebar flex items-center h-[28px] bg-jb-panel flex-shrink-0 border-b border-jb-border">
+  <!-- ══ MENU BAR ══════════════════════════════════════════ -->
+  <!-- With CSD (hiddenInset), the workspace tab bar IS the title bar.
+       This is just the menu bar row, kept draggable so the window
+       can still be moved by dragging from this area. -->
+  <header class="titlebar flex items-center h-[26px] bg-jb-panel flex-shrink-0 border-b border-jb-border">
 
-    <!-- LEFT: nav wrapper (flex-1, overflow-hidden)
-         The nav is ALWAYS in the DOM so the ResizeObserver can measure it.
-         We toggle visibility between the nav and the hamburger. -->
     <div bind:this={navWrapEl} class="no-drag flex items-center flex-1 min-w-0 overflow-hidden pl-1 relative">
 
-      <!-- Hamburger (visible only when nav overflows) -->
       {#if navOverflows}
         <button
           onclick={() => hamburgerOpen = !hamburgerOpen}
@@ -340,7 +336,6 @@
           <span class="block w-[13px] h-[1.5px] bg-jb-muted rounded"></span>
           <span class="block w-[13px] h-[1.5px] bg-jb-muted rounded"></span>
         </button>
-        <!-- Dropdown -->
         {#if hamburgerOpen}
           <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
           <div class="fixed inset-0 z-40" onclick={() => hamburgerOpen = false}></div>
@@ -354,7 +349,6 @@
         {/if}
       {/if}
 
-      <!-- Full nav — always in DOM for measurement, hidden when hamburger is active -->
       <nav
         bind:this={navEl}
         class="flex items-center gap-0"
@@ -371,12 +365,6 @@
 
     </div>
 
-    <!-- CENTER: title -->
-    <div class="flex-shrink-0 text-[12px] text-jb-muted font-medium pointer-events-none px-4">
-      ultimate_editor — WebStorm
-    </div>
-
-    <!-- RIGHT: mirror spacer to keep title centered -->
     <div class="flex-1 min-w-0"></div>
 
   </header>

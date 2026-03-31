@@ -146,10 +146,11 @@ async function getMainViewUrl(): Promise<string> {
 const url = await getMainViewUrl();
 
 const mainWindow = new BrowserWindow({
-  title: "Svelte App",
+  title: "ultimate_editor",
   url,
   rpc,
   frame: { width: 900, height: 700, x: 200, y: 200 },
+  titleBarStyle: "hiddenInset",
 });
 
 // ── Helper: safely send to webview ───────────────────────────────────────────
