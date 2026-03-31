@@ -1199,56 +1199,6 @@
           <line x1="11" y1="1.5" x2="11" y2="14.5"/>
         </svg>
       </button>
-      <div class="w-px h-3.5 bg-jb-border mx-0.5"></div>
-      <!-- Workspace tiling: single -->
-      <button
-        title="Single workspace"
-        onclick={() => workspaceStore.setTilingLayout("single")}
-        class="flex items-center justify-center w-[26px] h-[22px] border-none bg-transparent cursor-pointer transition-colors rounded
-          {workspaceStore.tilingLayout === 'single' ? 'text-jb-text2 bg-jb-hover' : 'text-jb-muted hover:text-jb-text hover:bg-jb-hover'}"
-      >
-        <svg viewBox="0 0 14 14" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.2">
-          <rect x="1" y="1" width="12" height="12" rx="1"/>
-        </svg>
-      </button>
-      <!-- Workspace tiling: vsplit (side by side) -->
-      <button
-        title="Two workspaces side by side"
-        onclick={() => workspaceStore.setTilingLayout("vsplit")}
-        class="flex items-center justify-center w-[26px] h-[22px] border-none bg-transparent cursor-pointer transition-colors rounded
-          {workspaceStore.tilingLayout === 'vsplit' ? 'text-jb-text2 bg-jb-hover' : 'text-jb-muted hover:text-jb-text hover:bg-jb-hover'}"
-      >
-        <svg viewBox="0 0 14 14" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.2">
-          <rect x="1" y="1" width="5" height="12" rx="1"/>
-          <rect x="8" y="1" width="5" height="12" rx="1"/>
-        </svg>
-      </button>
-      <!-- Workspace tiling: hsplit (stacked) -->
-      <button
-        title="Two workspaces stacked"
-        onclick={() => workspaceStore.setTilingLayout("hsplit")}
-        class="flex items-center justify-center w-[26px] h-[22px] border-none bg-transparent cursor-pointer transition-colors rounded
-          {workspaceStore.tilingLayout === 'hsplit' ? 'text-jb-text2 bg-jb-hover' : 'text-jb-muted hover:text-jb-text hover:bg-jb-hover'}"
-      >
-        <svg viewBox="0 0 14 14" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.2">
-          <rect x="1" y="1" width="12" height="5" rx="1"/>
-          <rect x="1" y="8" width="12" height="5" rx="1"/>
-        </svg>
-      </button>
-      <!-- Workspace tiling: quarter (2×2 grid) -->
-      <button
-        title="Four workspaces (2×2)"
-        onclick={() => workspaceStore.setTilingLayout("quarter")}
-        class="flex items-center justify-center w-[26px] h-[22px] border-none bg-transparent cursor-pointer transition-colors rounded
-          {workspaceStore.tilingLayout === 'quarter' ? 'text-jb-text2 bg-jb-hover' : 'text-jb-muted hover:text-jb-text hover:bg-jb-hover'}"
-      >
-        <svg viewBox="0 0 14 14" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.2">
-          <rect x="1" y="1" width="5" height="5" rx="0.8"/>
-          <rect x="8" y="1" width="5" height="5" rx="0.8"/>
-          <rect x="1" y="8" width="5" height="5" rx="0.8"/>
-          <rect x="8" y="8" width="5" height="5" rx="0.8"/>
-        </svg>
-      </button>
     </div>
 
     <!-- Center: mode tabs -->

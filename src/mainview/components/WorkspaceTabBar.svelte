@@ -118,6 +118,55 @@
     {/each}
   </div>
 
+  <!-- Tiling layout buttons -->
+  <div class="tiling-btns">
+    <button
+      class="tiling-btn"
+      class:tiling-btn--active={workspaceStore.tilingLayout === 'single'}
+      title="Single workspace"
+      onclick={() => workspaceStore.setTilingLayout("single")}
+    >
+      <svg viewBox="0 0 14 14" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.2">
+        <rect x="1" y="1" width="12" height="12" rx="1"/>
+      </svg>
+    </button>
+    <button
+      class="tiling-btn"
+      class:tiling-btn--active={workspaceStore.tilingLayout === 'vsplit'}
+      title="Two workspaces side by side"
+      onclick={() => workspaceStore.setTilingLayout("vsplit")}
+    >
+      <svg viewBox="0 0 14 14" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.2">
+        <rect x="1" y="1" width="5" height="12" rx="1"/>
+        <rect x="8" y="1" width="5" height="12" rx="1"/>
+      </svg>
+    </button>
+    <button
+      class="tiling-btn"
+      class:tiling-btn--active={workspaceStore.tilingLayout === 'hsplit'}
+      title="Two workspaces stacked"
+      onclick={() => workspaceStore.setTilingLayout("hsplit")}
+    >
+      <svg viewBox="0 0 14 14" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.2">
+        <rect x="1" y="1" width="12" height="5" rx="1"/>
+        <rect x="1" y="8" width="12" height="5" rx="1"/>
+      </svg>
+    </button>
+    <button
+      class="tiling-btn"
+      class:tiling-btn--active={workspaceStore.tilingLayout === 'quarter'}
+      title="Four workspaces (2×2)"
+      onclick={() => workspaceStore.setTilingLayout("quarter")}
+    >
+      <svg viewBox="0 0 14 14" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.2">
+        <rect x="1" y="1" width="5" height="5" rx="0.8"/>
+        <rect x="8" y="1" width="5" height="5" rx="0.8"/>
+        <rect x="1" y="8" width="5" height="5" rx="0.8"/>
+        <rect x="8" y="8" width="5" height="5" rx="0.8"/>
+      </svg>
+    </button>
+  </div>
+
   <!-- Workspace overview button -->
   <button
     class="tab-ws"
@@ -313,5 +362,38 @@
   .tab-ws:hover {
     background: #27282c;
     color: #dfe1e5;
+  }
+
+  .tiling-btns {
+    display: flex;
+    align-items: center;
+    gap: 1px;
+    padding: 0 6px;
+    border-left: 1px solid #2d2f33;
+    -webkit-app-region: no-drag;
+  }
+
+  .tiling-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    height: 26px;
+    border: none;
+    background: transparent;
+    color: #555a60;
+    cursor: pointer;
+    border-radius: 4px;
+    transition: background 100ms ease, color 100ms ease;
+  }
+
+  .tiling-btn:hover {
+    background: #27282c;
+    color: #bbbec4;
+  }
+
+  .tiling-btn--active {
+    color: #bbbec4;
+    background: #2e3036;
   }
 </style>
