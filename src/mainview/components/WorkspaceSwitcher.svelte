@@ -406,68 +406,90 @@
 <!-- ── Workspace tab bar ──────────────────────────────────── -->
 <WorkspaceTabBar />
 
-<!-- ── Viewport (overflow:hidden clips the 3 panels) ────────── -->
-<div class="ws-viewport">
-
-  <!--
-    3-slot container. trackX drives all transitions.
-    Slots are absolute-positioned relative to this container:
-      prev  → left: -100vw
-      current → left: 0
-      next  → left: +100vw
-    translateX(trackX) shifts everything together.
-  -->
+{#if workspaceStore.tilingLayout !== "single"}
+  <!-- ── Tiled workspace view ──────────────────────────────── -->
+  <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
   <div
-    class="ws-container"
-    style:transform="translateX({trackX}px)"
-    style:transition={trackCss}
-    style:will-change={busy || gestureDir !== 0 ? "transform" : "auto"}
+    class="ws-tiled"
+    style:display={workspaceStore.tilingLayout === "quarter" ? "grid" : "flex"}
+    style:grid-template-columns={workspaceStore.tilingLayout === "quarter" ? "1fr 1fr" : undefined}
+    style:grid-template-rows={workspaceStore.tilingLayout === "quarter" ? "1fr 1fr" : undefined}
+    style:flex-direction={workspaceStore.tilingLayout === "hsplit" ? "column" : "row"}
   >
-    <!-- PREV slot -->
-    <div class="ws-slot ws-slot--prev">
-      {#if showPrev && prevWs}
-        <WorkspacePreviewFull ws={prevWs} />
-      {:else if showPrev}
-        <div class="ws-edge">← First workspace</div>
-      {/if}
-    </div>
-
-    <!-- CURRENT slot — always live, no {#key} re-creation -->
-    <div class="ws-slot ws-slot--current">
-      <EditorLayout
-        ws={workspaceStore.active}
-        onUpdate={(patch) => workspaceStore.updateActive(patch)}
-        onOpenOverview={() => workspaceStore.toggleOverview()}
+    {#each workspaceStore.tiledIndices as wsIdx, tileIdx}
+      {@const tileWs = workspaceStore.workspaces[wsIdx]}
+      <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
+      <div
+        class="ws-tile"
+        class:ws-tile--focused={workspaceStore.tiledFocus === tileIdx}
+        onclick={() => workspaceStore.focusTile(tileIdx)}
       >
-        {@render children()}
-      </EditorLayout>
-    </div>
-
-    <!-- NEXT slot -->
-    <div class="ws-slot ws-slot--next">
-      {#if showNext && nextWs}
-        <WorkspacePreviewFull ws={nextWs} />
-      {:else if showNext}
-        <div class="ws-edge">Last workspace →</div>
-      {/if}
-    </div>
+        <EditorLayout
+          ws={tileWs}
+          onUpdate={(patch) => workspaceStore.updateWorkspace(wsIdx, patch)}
+          onOpenOverview={() => workspaceStore.toggleOverview()}
+        >
+          {@render children()}
+        </EditorLayout>
+      </div>
+    {/each}
   </div>
 
-  <!-- Position indicator dots — appear during gesture / transition -->
-  {#if workspaceStore.workspaces.length > 1}
+{:else}
+  <!-- ── Single workspace (3-slot animated switcher) ───────── -->
+  <div class="ws-viewport">
     <div
-      class="ws-dots"
-      class:ws-dots--visible={gestureDir !== 0 || busy}
+      class="ws-container"
+      style:transform="translateX({trackX}px)"
+      style:transition={trackCss}
+      style:will-change={busy || gestureDir !== 0 ? "transform" : "auto"}
     >
-      {#each workspaceStore.workspaces as _, i}
-        <div
-          class="ws-dot"
-          class:ws-dot--active={i === workspaceStore.activeIndex}
-        ></div>
-      {/each}
+      <!-- PREV slot -->
+      <div class="ws-slot ws-slot--prev">
+        {#if showPrev && prevWs}
+          <WorkspacePreviewFull ws={prevWs} />
+        {:else if showPrev}
+          <div class="ws-edge">← First workspace</div>
+        {/if}
+      </div>
+
+      <!-- CURRENT slot — always live, no {#key} re-creation -->
+      <div class="ws-slot ws-slot--current">
+        <EditorLayout
+          ws={workspaceStore.active}
+          onUpdate={(patch) => workspaceStore.updateActive(patch)}
+          onOpenOverview={() => workspaceStore.toggleOverview()}
+        >
+          {@render children()}
+        </EditorLayout>
+      </div>
+
+      <!-- NEXT slot -->
+      <div class="ws-slot ws-slot--next">
+        {#if showNext && nextWs}
+          <WorkspacePreviewFull ws={nextWs} />
+        {:else if showNext}
+          <div class="ws-edge">Last workspace →</div>
+        {/if}
+      </div>
     </div>
-  {/if}
-</div>
+
+    <!-- Position indicator dots — appear during gesture / transition -->
+    {#if workspaceStore.workspaces.length > 1}
+      <div
+        class="ws-dots"
+        class:ws-dots--visible={gestureDir !== 0 || busy}
+      >
+        {#each workspaceStore.workspaces as _, i}
+          <div
+            class="ws-dot"
+            class:ws-dot--active={i === workspaceStore.activeIndex}
+          ></div>
+        {/each}
+      </div>
+    {/if}
+  </div>
+{/if}
 
 <!-- Overview overlay -->
 {#if workspaceStore.overviewOpen}

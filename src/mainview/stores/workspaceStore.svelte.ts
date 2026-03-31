@@ -166,61 +166,94 @@ class WorkspaceStore {
 
   // ── Tab management ──────────────────────────────────────────
 
-  openFile(path: string, name: string, icon: string, content: string) {
-    const ws = this.workspaces[this.activeIndex];
-    // If already open, just activate it
+  // Find the workspace that owns a given tab (by ID)
+  private wsForTab(tabId: string): WorkspaceState | null {
+    return this.workspaces.find(w => w.openTabs.some(t => t.id === tabId)) ?? null;
+  }
+
+  // When a tile workspace is identified, sync focus/activeIndex
+  private focusByWs(ws: WorkspaceState) {
+    const wsIdx = this.workspaces.indexOf(ws);
+    if (wsIdx === -1) return;
+    const tileIdx = this.tiledIndices.indexOf(wsIdx);
+    if (tileIdx !== -1) {
+      this.tiledFocus = tileIdx;
+    }
+    this.activeIndex = wsIdx;
+  }
+
+  openFile(wsId: string, path: string, name: string, icon: string, content: string) {
+    const ws = this.workspaces.find(w => w.id === wsId);
+    if (!ws) return;
+    this.focusByWs(ws);
     const existing = ws.openTabs.find(t => t.path === path);
     if (existing) {
       ws.activeTabId = existing.id;
       return;
     }
     const tab: EditorTab = {
-      id: crypto.randomUUID(),
-      path,
-      name,
-      icon,
-      content,
-      modified: false,
+      id: crypto.randomUUID(), path, name, icon, content, modified: false,
     };
     ws.openTabs.push(tab);
     ws.activeTabId = tab.id;
   }
 
   closeTab(tabId: string) {
-    const ws = this.workspaces[this.activeIndex];
+    const ws = this.wsForTab(tabId);
+    if (!ws) return;
     const idx = ws.openTabs.findIndex(t => t.id === tabId);
     if (idx === -1) return;
     ws.openTabs.splice(idx, 1);
-    // Activate adjacent tab
     if (ws.activeTabId === tabId) {
-      if (ws.openTabs.length === 0) {
-        ws.activeTabId = null;
-      } else {
-        const newIdx = Math.min(idx, ws.openTabs.length - 1);
-        ws.activeTabId = ws.openTabs[newIdx].id;
-      }
+      ws.activeTabId = ws.openTabs.length > 0
+        ? ws.openTabs[Math.min(idx, ws.openTabs.length - 1)].id
+        : null;
     }
   }
 
   setActiveTab(tabId: string) {
-    this.workspaces[this.activeIndex].activeTabId = tabId;
+    const ws = this.wsForTab(tabId);
+    if (!ws) return;
+    this.focusByWs(ws);
+    ws.activeTabId = tabId;
+  }
+
+  // ── Workspace tiling ─────────────────────────────────────────
+  tilingLayout = $state<"single" | "vsplit" | "hsplit" | "quarter">("single");
+  tiledIndices = $state<number[]>([0]);
+  tiledFocus   = $state(0);
+
+  setTilingLayout(layout: "single" | "vsplit" | "hsplit" | "quarter") {
+    const count = layout === "quarter" ? 4 : layout === "single" ? 1 : 2;
+    // Auto-create workspaces if needed
+    while (this.workspaces.length < count) {
+      this.workspaces.push(createWorkspace(`Workspace ${this.workspaces.length + 1}`));
+    }
+    this.tilingLayout = layout;
+    this.tiledIndices = Array.from({ length: count }, (_, i) => i);
+    if (this.tiledFocus >= count) this.tiledFocus = 0;
+    this.activeIndex = this.tiledIndices[this.tiledFocus];
+  }
+
+  focusTile(tileIdx: number) {
+    this.tiledFocus = tileIdx;
+    this.activeIndex = this.tiledIndices[tileIdx];
+  }
+
+  updateWorkspace(wsIndex: number, patch: Partial<WorkspaceState>) {
+    Object.assign(this.workspaces[wsIndex], patch);
   }
 
   updateTabContent(tabId: string, content: string) {
-    const ws = this.workspaces[this.activeIndex];
-    const tab = ws.openTabs.find(t => t.id === tabId);
-    if (tab) {
-      tab.content = content;
-      tab.modified = true;
-    }
+    const ws = this.wsForTab(tabId);
+    const tab = ws?.openTabs.find(t => t.id === tabId);
+    if (tab) { tab.content = content; tab.modified = true; }
   }
 
   saveTab(tabId: string) {
-    const ws = this.workspaces[this.activeIndex];
-    const tab = ws.openTabs.find(t => t.id === tabId);
-    if (tab) {
-      tab.modified = false;
-    }
+    const ws = this.wsForTab(tabId);
+    const tab = ws?.openTabs.find(t => t.id === tabId);
+    if (tab) tab.modified = false;
   }
 
   // ── Breakpoints ─────────────────────────────────────────────

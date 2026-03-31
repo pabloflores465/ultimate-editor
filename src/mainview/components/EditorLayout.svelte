@@ -545,7 +545,7 @@
             activeTabPath={activeTab?.path ?? ""}
             onClose={() => onUpdate({ leftPanelOpen: false })}
             onFileOpen={(path, name, icon, content) =>
-              workspaceStore.openFile(path, name, icon, content)
+              workspaceStore.openFile(ws.id, path, name, icon, content)
             }
             workspaceId={ws.id}
             projectRootName={ws.project.rootName}
@@ -748,9 +748,7 @@
 
       <!-- ── EDITOR AREA ── -->
         <div class="flex-1 flex min-h-0 overflow-hidden bg-jb-bg relative">
-
           {#if activeTab}
-            <!-- ── Real CodeMirror editor ── -->
             {#key activeTab.id}
               <CodeEditor
                 tabId={activeTab.id}
@@ -761,13 +759,9 @@
               />
             {/key}
           {:else if hasProject}
-            <!-- ── Project open, no file selected: plain dark background ── -->
             <div class="flex-1 bg-jb-bg"></div>
-
           {:else}
-            <!-- ── No project open: empty state message ── -->
             <div class="flex-1 bg-jb-bg flex flex-col items-center justify-center gap-4 select-none pointer-events-none">
-              <!-- Folder icon -->
               <svg viewBox="0 0 48 48" width="52" height="52" fill="none" stroke="#4c5052" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="opacity-60">
                 <path d="M6 10h12l4 5h20a3 3 0 0 1 3 3v18a3 3 0 0 1-3 3H6a3 3 0 0 1-3-3V13a3 3 0 0 1 3-3z"/>
               </svg>
@@ -775,7 +769,6 @@
               <p class="text-[12px]" style="color:#46494a">Open a project or file to start editing</p>
             </div>
           {/if}
-
         </div><!-- end editor area -->
 
     {:else}
@@ -1216,6 +1209,56 @@
         <svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.2">
           <rect x="1.5" y="1.5" width="13" height="13" rx="1.5"/>
           <line x1="11" y1="1.5" x2="11" y2="14.5"/>
+        </svg>
+      </button>
+      <div class="w-px h-3.5 bg-jb-border mx-0.5"></div>
+      <!-- Workspace tiling: single -->
+      <button
+        title="Single workspace"
+        onclick={() => workspaceStore.setTilingLayout("single")}
+        class="flex items-center justify-center w-[26px] h-[22px] border-none bg-transparent cursor-pointer transition-colors rounded
+          {workspaceStore.tilingLayout === 'single' ? 'text-jb-text2 bg-jb-hover' : 'text-jb-muted hover:text-jb-text hover:bg-jb-hover'}"
+      >
+        <svg viewBox="0 0 14 14" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.2">
+          <rect x="1" y="1" width="12" height="12" rx="1"/>
+        </svg>
+      </button>
+      <!-- Workspace tiling: vsplit (side by side) -->
+      <button
+        title="Two workspaces side by side"
+        onclick={() => workspaceStore.setTilingLayout("vsplit")}
+        class="flex items-center justify-center w-[26px] h-[22px] border-none bg-transparent cursor-pointer transition-colors rounded
+          {workspaceStore.tilingLayout === 'vsplit' ? 'text-jb-text2 bg-jb-hover' : 'text-jb-muted hover:text-jb-text hover:bg-jb-hover'}"
+      >
+        <svg viewBox="0 0 14 14" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.2">
+          <rect x="1" y="1" width="5" height="12" rx="1"/>
+          <rect x="8" y="1" width="5" height="12" rx="1"/>
+        </svg>
+      </button>
+      <!-- Workspace tiling: hsplit (stacked) -->
+      <button
+        title="Two workspaces stacked"
+        onclick={() => workspaceStore.setTilingLayout("hsplit")}
+        class="flex items-center justify-center w-[26px] h-[22px] border-none bg-transparent cursor-pointer transition-colors rounded
+          {workspaceStore.tilingLayout === 'hsplit' ? 'text-jb-text2 bg-jb-hover' : 'text-jb-muted hover:text-jb-text hover:bg-jb-hover'}"
+      >
+        <svg viewBox="0 0 14 14" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.2">
+          <rect x="1" y="1" width="12" height="5" rx="1"/>
+          <rect x="1" y="8" width="12" height="5" rx="1"/>
+        </svg>
+      </button>
+      <!-- Workspace tiling: quarter (2×2 grid) -->
+      <button
+        title="Four workspaces (2×2)"
+        onclick={() => workspaceStore.setTilingLayout("quarter")}
+        class="flex items-center justify-center w-[26px] h-[22px] border-none bg-transparent cursor-pointer transition-colors rounded
+          {workspaceStore.tilingLayout === 'quarter' ? 'text-jb-text2 bg-jb-hover' : 'text-jb-muted hover:text-jb-text hover:bg-jb-hover'}"
+      >
+        <svg viewBox="0 0 14 14" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.2">
+          <rect x="1" y="1" width="5" height="5" rx="0.8"/>
+          <rect x="8" y="1" width="5" height="5" rx="0.8"/>
+          <rect x="1" y="8" width="5" height="5" rx="0.8"/>
+          <rect x="8" y="8" width="5" height="5" rx="0.8"/>
         </svg>
       </button>
     </div>
