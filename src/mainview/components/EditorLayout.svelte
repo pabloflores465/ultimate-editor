@@ -28,6 +28,39 @@
   let resizingBottom = $state(false);
   let runConfigOpen  = $state(false);
   let hamburgerOpen  = $state(false);
+  let mode           = $state<"editor" | "agent">("editor");
+
+  // ── Agent mode state ──────────────────────────────────────────
+  interface AgentMessage {
+    id: string;
+    role: "user" | "assistant";
+    content: string;
+    timestamp: Date;
+  }
+  let agentMessages = $state<AgentMessage[]>([]);
+  let agentInput    = $state("");
+  let agentStreaming = $state(false);
+  let agentEl       = $state<HTMLDivElement | null>(null);
+
+  async function agentSend() {
+    if (!agentInput.trim() || agentStreaming) return;
+    const userMsg: AgentMessage = { id: crypto.randomUUID(), role: "user", content: agentInput.trim(), timestamp: new Date() };
+    agentMessages = [...agentMessages, userMsg];
+    agentInput = "";
+    agentStreaming = true;
+    await new Promise(r => setTimeout(r, 800));
+    agentMessages = [...agentMessages, {
+      id: crypto.randomUUID(), role: "assistant",
+      content: "I'm the agent view — connect me to your AI backend to get real responses.",
+      timestamp: new Date(),
+    }];
+    agentStreaming = false;
+    setTimeout(() => agentEl?.scrollTo({ top: agentEl.scrollHeight, behavior: "smooth" }), 50);
+  }
+
+  function agentKeydown(e: KeyboardEvent) {
+    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); agentSend(); }
+  }
 
   let hasProject = $derived(ws.project.fileNodes.length > 0);
 
@@ -444,8 +477,23 @@
       </svg>
     </button>
 
-    <!-- Right-side: workspace switcher button + notifications -->
+    <!-- Right-side: mode tabs + workspace switcher button + notifications -->
     <div class="ml-auto flex items-center gap-1">
+      <!-- Mode tabs -->
+      <div class="flex items-center bg-jb-panel2 rounded-md p-0.5 gap-0.5 border border-jb-border">
+        {#each [{ id: "editor", label: "Editor" }, { id: "agent", label: "Agent" }] as tab}
+          <button
+            onclick={() => mode = tab.id as "editor" | "agent"}
+            class="px-3 h-[22px] text-[11px] font-medium rounded cursor-pointer border-none transition-colors
+              {mode === tab.id
+                ? 'text-jb-text bg-jb-active shadow-sm'
+                : 'text-jb-muted hover:text-jb-text bg-transparent'}"
+          >{tab.label}</button>
+        {/each}
+      </div>
+
+      <div class="w-px h-4 bg-jb-border mx-0.5"></div>
+
       <!-- Workspace overview button -->
       <button
         title="Workspace Overview (Ctrl+Shift+`)"
@@ -646,8 +694,9 @@
       </div>
     {/if}
 
-    <!-- ── EDITOR COLUMN ── -->
+    <!-- ── CENTER: editor or agent ── -->
     <div class="flex-1 flex flex-col min-w-0 min-h-0 overflow-hidden">
+    {#if mode === "editor"}
 
       <!-- Navigation Bar (breadcrumb) -->
       <div class="flex items-center h-[26px] bg-jb-panel border-b border-jb-border flex-shrink-0 px-3 gap-1 text-[12px] overflow-hidden">
@@ -726,10 +775,7 @@
         </div>
       </div>
 
-      <!-- ── EDITOR + BOTTOM PANEL ── -->
-      <div class="flex-1 flex flex-col min-h-0 overflow-hidden">
-
-        <!-- ── EDITOR AREA ── -->
+      <!-- ── EDITOR AREA ── -->
         <div class="flex-1 flex min-h-0 overflow-hidden bg-jb-bg relative">
 
           {#if activeTab}
@@ -760,6 +806,118 @@
           {/if}
 
         </div><!-- end editor area -->
+
+    {:else}
+    <!-- ── AGENT CHAT CENTER ── -->
+    <div class="flex-1 flex flex-col min-h-0 overflow-hidden bg-jb-bg">
+
+      <!-- Messages -->
+      <div bind:this={agentEl} class="flex-1 overflow-y-auto min-h-0 px-8 py-6 space-y-6">
+        {#if agentMessages.length === 0}
+          <div class="flex flex-col items-center justify-center h-full text-center gap-3 py-16">
+            <div class="w-10 h-10 rounded-xl bg-jb-blue/20 flex items-center justify-center">
+              <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="#4e9ede" stroke-width="1.5">
+                <path d="M12 2a10 10 0 0 1 10 10c0 5.5-4.5 10-10 10S2 17.5 2 12 6.5 2 12 2z"/>
+                <path d="M8 12h8M12 8v8" stroke-linecap="round"/>
+              </svg>
+            </div>
+            <div class="text-[15px] font-semibold text-jb-text">What can I help you with?</div>
+            <div class="text-[12px] text-jb-muted max-w-[320px] leading-relaxed">
+              Ask me to write code, fix bugs, refactor, explain concepts, or make changes across your project.
+            </div>
+            <div class="flex flex-wrap gap-2 justify-center mt-2">
+              {#each ["Fix a bug", "Write a function", "Explain this code", "Refactor for readability"] as chip}
+                <button
+                  onclick={() => { agentInput = chip; }}
+                  class="px-3 py-1.5 rounded-full text-[11px] bg-jb-panel border border-jb-border text-jb-muted hover:text-jb-text hover:border-jb-blue/50 cursor-pointer transition-colors"
+                >{chip}</button>
+              {/each}
+            </div>
+          </div>
+        {:else}
+          {#each agentMessages as msg (msg.id)}
+            {#if msg.role === "user"}
+              <div class="flex justify-end">
+                <div class="max-w-[75%] bg-jb-blue/20 border border-jb-blue/30 rounded-2xl rounded-tr-sm px-4 py-3">
+                  <p class="text-[13px] text-jb-text leading-relaxed whitespace-pre-wrap">{msg.content}</p>
+                </div>
+              </div>
+            {:else}
+              <div class="flex gap-3">
+                <div class="w-7 h-7 rounded-lg bg-jb-green/20 flex items-center justify-center flex-shrink-0 mt-0.5">
+                  <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="#629755" stroke-width="1.3">
+                    <path d="M8 1a7 7 0 1 1 0 14A7 7 0 0 1 8 1z"/>
+                    <path d="M5 8l2 2 4-4" stroke-linecap="round" stroke-linejoin="round"/>
+                  </svg>
+                </div>
+                <div class="flex-1 min-w-0">
+                  <div class="text-[11px] text-jb-muted mb-1 font-medium">Agent</div>
+                  <p class="text-[13px] text-jb-text leading-relaxed whitespace-pre-wrap">{msg.content}</p>
+                </div>
+              </div>
+            {/if}
+          {/each}
+          {#if agentStreaming}
+            <div class="flex gap-3">
+              <div class="w-7 h-7 rounded-lg bg-jb-green/20 flex items-center justify-center flex-shrink-0">
+                <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="#629755" stroke-width="1.3">
+                  <path d="M8 1a7 7 0 1 1 0 14A7 7 0 0 1 8 1z"/>
+                  <path d="M5 8l2 2 4-4" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+              </div>
+              <div class="flex items-center gap-1 pt-2">
+                <span class="w-2 h-2 rounded-full bg-jb-blue/60 agent-dot"></span>
+                <span class="w-2 h-2 rounded-full bg-jb-blue/60 agent-dot" style="animation-delay:0.2s"></span>
+                <span class="w-2 h-2 rounded-full bg-jb-blue/60 agent-dot" style="animation-delay:0.4s"></span>
+              </div>
+            </div>
+          {/if}
+        {/if}
+      </div>
+
+      <!-- Input area -->
+      <div class="flex-shrink-0 px-8 pb-4">
+        <div class="border border-jb-border rounded-xl bg-jb-panel overflow-hidden focus-within:border-jb-blue/50 transition-colors">
+          <textarea
+            bind:value={agentInput}
+            onkeydown={agentKeydown}
+            placeholder="Ask for changes or follow-up…"
+            rows="3"
+            class="w-full px-4 pt-3 pb-2 text-[13px] bg-transparent border-none resize-none text-jb-text placeholder:text-jb-muted focus:outline-none leading-relaxed"
+          ></textarea>
+          <div class="flex items-center justify-between px-3 pb-2.5">
+            <div class="flex items-center gap-3 text-[11px] text-jb-muted">
+              <button class="flex items-center gap-1 hover:text-jb-text cursor-pointer bg-transparent border-none font-[inherit]">
+                <svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.3"><circle cx="8" cy="8" r="6"/><path d="M5.5 8.5c0-1.4 1.1-2.5 2.5-2.5s2.5 1.1 2.5 2.5"/></svg>
+                Claude Sonnet
+                <svg viewBox="0 0 10 6" width="9" height="9" fill="none" stroke="currentColor" stroke-width="1.2"><path d="M1 1l4 4 4-4"/></svg>
+              </button>
+              <span class="text-jb-border">|</span>
+              <button class="hover:text-jb-text cursor-pointer bg-transparent border-none font-[inherit]">Chat</button>
+              {#if ws.project.rootName}
+                <span class="text-jb-border">|</span>
+                <span class="flex items-center gap-1">
+                  <svg viewBox="0 0 12 12" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.1"><rect x="1" y="3" width="10" height="8" rx="1"/><path d="M4 3V1.5h4V3"/></svg>
+                  {ws.project.rootName}
+                </span>
+              {/if}
+            </div>
+            <button
+              onclick={agentSend}
+              disabled={!agentInput.trim() || agentStreaming}
+              title="Send (Enter)"
+              class="w-8 h-8 rounded-lg flex items-center justify-center bg-jb-blue text-white border-none cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed hover:bg-jb-blue/80 transition-colors"
+            >
+              <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8">
+                <path d="M3 8h10M9 4l4 4-4 4" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            </button>
+          </div>
+        </div>
+      </div>
+
+    </div><!-- end agent chat center -->
+    {/if}
 
         <!-- Bottom panel resize handle -->
         {#if ws.bottomPanelOpen}
@@ -969,8 +1127,7 @@
             </div>
           </div><!-- end bottom panel -->
 
-      </div><!-- end editor + bottom panel -->
-    </div><!-- end editor column -->
+    </div><!-- end center column -->
 
     <!-- ── RIGHT TOOL WINDOW (AI Chat) ── -->
     {#if ws.rightPanelOpen}
@@ -1142,4 +1299,13 @@
   /* Toolbar & strip buttons don't drag */
   button { -webkit-app-region: no-drag; }
   a      { -webkit-app-region: no-drag; }
+
+  /* Agent streaming dots */
+  @keyframes agent-pulse {
+    0%, 100% { opacity: 0.3; transform: scale(0.8); }
+    50%       { opacity: 1;   transform: scale(1); }
+  }
+  .agent-dot {
+    animation: agent-pulse 1.2s ease-in-out infinite;
+  }
 </style>
