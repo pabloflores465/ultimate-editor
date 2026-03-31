@@ -28,7 +28,9 @@
   let resizingBottom = $state(false);
   let runConfigOpen  = $state(false);
   let hamburgerOpen  = $state(false);
-  let mode           = $state<"editor" | "agent">("editor");
+  let toolbarOpen    = $state(true);
+  // mode is stored globally so WorkspaceTabBar can also toggle it
+  const mode = $derived(workspaceStore.mode);
 
   // ── Agent mode state ──────────────────────────────────────────
   interface AgentMessage {
@@ -380,6 +382,7 @@
   </header>
 
   <!-- ══ MAIN TOOLBAR ══════════════════════════════════════ -->
+  {#if toolbarOpen}
   <div class="flex items-center h-[38px] bg-jb-panel border-b border-jb-border flex-shrink-0 px-2 gap-0.5">
 
     <!-- Search everywhere -->
@@ -477,41 +480,8 @@
       </svg>
     </button>
 
-    <!-- Right-side: mode tabs + workspace switcher button + notifications -->
+    <!-- Right-side: notifications + help -->
     <div class="ml-auto flex items-center gap-1">
-      <!-- Mode tabs -->
-      <div class="flex items-center bg-jb-panel2 rounded-md p-0.5 gap-0.5 border border-jb-border">
-        {#each [{ id: "editor", label: "Editor" }, { id: "agent", label: "Agent" }] as tab}
-          <button
-            onclick={() => mode = tab.id as "editor" | "agent"}
-            class="px-3 h-[22px] text-[11px] font-medium rounded cursor-pointer border-none transition-colors
-              {mode === tab.id
-                ? 'text-jb-text bg-jb-active shadow-sm'
-                : 'text-jb-muted hover:text-jb-text bg-transparent'}"
-          >{tab.label}</button>
-        {/each}
-      </div>
-
-      <div class="w-px h-4 bg-jb-border mx-0.5"></div>
-
-      <!-- Workspace overview button -->
-      <button
-        title="Workspace Overview (Ctrl+Shift+`)"
-        onclick={onOpenOverview}
-        class="ws-indicator no-drag"
-      >
-        <!-- 2×2 grid icon -->
-        <svg viewBox="0 0 14 14" width="13" height="13" fill="currentColor">
-          <rect x="1" y="1" width="5" height="5" rx="0.7" opacity="0.95"/>
-          <rect x="8" y="1" width="5" height="5" rx="0.7" opacity="0.5"/>
-          <rect x="1" y="8" width="5" height="5" rx="0.7" opacity="0.5"/>
-          <rect x="8" y="8" width="5" height="5" rx="0.7" opacity="0.5"/>
-        </svg>
-        <span>{ws.name}</span>
-      </button>
-
-      <div class="w-px h-4 bg-jb-border mx-0.5"></div>
-
       <!-- Notifications -->
       <button title="Notifications" class="flex items-center justify-center w-[28px] h-[28px] rounded hover:bg-jb-hover">
         <svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="#808080" stroke-width="1.3">
@@ -527,6 +497,7 @@
       </button>
     </div>
   </div>
+  {/if}
 
   <!-- ══ BODY (left strip + panels + editor + right strip) ══ -->
   <div class="flex flex-1 min-h-0 overflow-hidden">
@@ -1193,8 +1164,21 @@
   </div><!-- end body -->
 
   <!-- ══ BOTTOM TOOL STRIP ════════════════════════════════════ -->
-  <div class="flex items-center h-[27px] bg-jb-panel border-t border-jb-border flex-shrink-0 px-1">
+  <div class="relative flex items-center h-[27px] bg-jb-panel border-t border-jb-border flex-shrink-0 px-1">
     <div class="flex items-center gap-0.5">
+      <!-- Toolbar toggle -->
+      <button
+        title={toolbarOpen ? "Hide toolbar" : "Show toolbar"}
+        class="flex items-center justify-center w-[26px] h-[22px] border-none bg-transparent cursor-pointer transition-colors rounded
+          {toolbarOpen ? 'text-jb-text2 bg-jb-hover' : 'text-jb-muted hover:text-jb-text hover:bg-jb-hover'}"
+        onclick={() => toolbarOpen = !toolbarOpen}
+      >
+        <svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.2">
+          <rect x="1.5" y="1.5" width="13" height="13" rx="1.5"/>
+          <line x1="1.5" y1="5.5" x2="14.5" y2="5.5"/>
+        </svg>
+      </button>
+      <div class="w-px h-3.5 bg-jb-border mx-0.5"></div>
       <button
         title={ws.leftPanelOpen ? "Hide left sidebar" : "Show left sidebar"}
         class="flex items-center justify-center w-[26px] h-[22px] text-[12px] font-medium border-none bg-transparent cursor-pointer transition-colors rounded
@@ -1235,6 +1219,22 @@
         </svg>
       </button>
     </div>
+
+    <!-- Center: mode tabs -->
+    <div class="absolute left-1/2 -translate-x-1/2 flex items-center">
+      <div class="flex items-center bg-jb-panel2 rounded-md p-0.5 gap-0.5 border border-jb-border">
+        {#each [{ id: "editor", label: "Editor" }, { id: "agent", label: "Agent" }] as tab}
+          <button
+            onclick={() => workspaceStore.mode = tab.id as "editor" | "agent"}
+            class="px-3 h-[20px] text-[11px] font-medium rounded cursor-pointer border-none transition-colors
+              {mode === tab.id
+                ? 'text-jb-text bg-jb-active'
+                : 'text-jb-muted hover:text-jb-text bg-transparent'}"
+          >{tab.label}</button>
+        {/each}
+      </div>
+    </div>
+
     <div class="flex-1"></div>
   </div>
 

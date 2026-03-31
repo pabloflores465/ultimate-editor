@@ -80,6 +80,7 @@ class WorkspaceStore {
   workspaces = $state<WorkspaceState[]>([createWorkspace("Workspace 1")]);
   activeIndex = $state(0);
   overviewOpen = $state(false);
+  mode = $state<"editor" | "agent">("editor");
   /** 1 = new workspace is to the right (slide left), -1 = to the left (slide right) */
   slideDirection = $state<1 | -1>(1);
   /** Incrementing this key forces the {#key} block to re-render with animation */

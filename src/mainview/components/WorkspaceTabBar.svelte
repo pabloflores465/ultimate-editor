@@ -59,6 +59,13 @@
 </script>
 
 <div class="tab-bar">
+  <button
+    class="tab-add"
+    onclick={() => workspaceStore.addWorkspace()}
+    title="New workspace (Ctrl+Alt+N)"
+    aria-label="Add workspace"
+  >+</button>
+
   <div class="tabs">
     {#each workspaceStore.workspaces as ws, i (ws.id)}
       <!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -107,12 +114,21 @@
     {/each}
   </div>
 
+  <!-- Workspace overview button -->
   <button
-    class="tab-add"
-    onclick={() => workspaceStore.addWorkspace()}
-    title="New workspace (Ctrl+Alt+N)"
-    aria-label="Add workspace"
-  >+</button>
+    class="tab-ws"
+    onclick={() => workspaceStore.toggleOverview()}
+    title="Workspace Overview (Ctrl+Shift+`)"
+    aria-label="Workspace overview"
+  >
+    <svg viewBox="0 0 14 14" width="11" height="11" fill="currentColor">
+      <rect x="1" y="1" width="5" height="5" rx="0.7" opacity="0.95"/>
+      <rect x="8" y="1" width="5" height="5" rx="0.7" opacity="0.5"/>
+      <rect x="1" y="8" width="5" height="5" rx="0.7" opacity="0.5"/>
+      <rect x="8" y="8" width="5" height="5" rx="0.7" opacity="0.5"/>
+    </svg>
+    <span>{workspaceStore.active.name}</span>
+  </button>
 </div>
 
 <style>
@@ -250,10 +266,33 @@
     cursor: pointer;
     flex-shrink: 0;
     transition: background 100ms ease, color 100ms ease;
-    border-left: 1px solid #2d2f33;
+    border-right: 1px solid #2d2f33;
   }
 
   .tab-add:hover {
+    background: #27282c;
+    color: #dfe1e5;
+  }
+
+  .tab-ws {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    padding: 0 10px;
+    height: 34px;
+    border: none;
+    border-left: 1px solid #2d2f33;
+    background: transparent;
+    color: #7e8185;
+    font-size: 12px;
+    font-family: inherit;
+    cursor: pointer;
+    flex-shrink: 0;
+    white-space: nowrap;
+    transition: background 100ms ease, color 100ms ease;
+  }
+
+  .tab-ws:hover {
     background: #27282c;
     color: #dfe1e5;
   }
