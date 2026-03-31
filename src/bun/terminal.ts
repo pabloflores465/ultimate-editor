@@ -37,8 +37,6 @@ import { spawn as nodeSpawn } from "node:child_process";
 import { join } from "node:path";
 import { tmpdir, homedir } from "node:os";
 
-// ── Constantes ioctl en macOS ─────────────────────────────────────────────────
-const TIOCSWINSZ = 0x80087467n;
 
 // ── ZDOTDIR + Starship wrapper ────────────────────────────────────────────────
 // Crea un directorio temporal con:
@@ -58,7 +56,7 @@ function ensureZdotdir(workspaceId: string): string {
     `unset _ue_saved_zdotdir`,
   ].join("\n");
 
-  writeFileSync(join(dir, ".zshenv"), wrapFile(".zshenv") + "\n");
+  writeFileSync(join(dir, ".zshenv"), wrapFile(".zshenv") + "\nexport TERMINFO=/usr/share/terminfo\nexport TERMINFO_DIRS=/usr/share/terminfo\n");
 
   // .zshrc: source user config, then disable PROMPT_SP (removes the '%'
   // marker that zsh prints for partial lines) and clear the screen so the
@@ -70,6 +68,11 @@ function ensureZdotdir(workspaceId: string): string {
     `typeset -g POWERLEVEL9K_INSTANT_PROMPT=off 2>/dev/null`,
     // Remove the '%' partial-line marker
     `unsetopt PROMPT_SP 2>/dev/null`,
+    // Unset TERMINFO so ncurses uses its compiled-in default search path.
+    // Kitty's shell integration overrides TERMINFO to its own dir (only has
+    // xterm-kitty), which breaks all other terminal types (top, htop, vim…).
+    `export TERMINFO=/usr/share/terminfo`,
+    `export TERMINFO_DIRS=/usr/share/terminfo`,
     // Clear screen after all init so first prompt starts at row 0
     `clear`,
   ].join("\n");
@@ -92,14 +95,29 @@ function ensureZdotdir(workspaceId: string): string {
   return dir;
 }
 
-// ── FFI: openpty + ioctl ──────────────────────────────────────────────────────
-const { symbols: { openpty, ioctl } } = dlopen("libSystem.B.dylib", {
+// ── FFI: openpty (libSystem) + pty_helpers (non-variadic ioctl wrappers) ──────
+// ioctl() is variadic — on ARM64 Apple Silicon, variadic args go on the stack
+// while Bun FFI passes them in registers. This silently corrupts the winsize
+// struct, giving the PTY garbage dimensions (e.g. 45444×1786). We use a tiny
+// compiled .dylib with fixed-signature wrappers instead.
+const { symbols: { openpty } } = dlopen("libSystem.B.dylib", {
   openpty: {
     args: [FFIType.ptr, FFIType.ptr, FFIType.ptr, FFIType.ptr, FFIType.ptr],
     returns: FFIType.int32_t,
   },
-  ioctl: {
-    args: [FFIType.int32_t, FFIType.uint64_t, FFIType.ptr],
+});
+
+// Resolve pty_helpers.dylib — check multiple locations for dev vs production
+const _candidates = [
+  join(import.meta.dir || __dirname, "..", "native", "pty_helpers.dylib"),
+  join(import.meta.dir || __dirname, "pty_helpers.dylib"),
+  join(process.argv0, "..", "pty_helpers.dylib"),
+];
+const ptyHelpersPath = _candidates.find(p => existsSync(p))
+  || (() => { throw new Error(`pty_helpers.dylib not found, tried: ${_candidates.join(", ")}`); })();
+const { symbols: { pty_set_winsize } } = dlopen(ptyHelpersPath, {
+  pty_set_winsize: {
+    args: [FFIType.int32_t, FFIType.u16, FFIType.u16],
     returns: FFIType.int32_t,
   },
 });
@@ -124,12 +142,19 @@ function createPty(): { masterFd: number; slaveFd: number } {
   const slaveBuf  = new Int32Array(1);
   const ret = openpty(ptr(masterBuf), ptr(slaveBuf), null, null, null);
   if (ret !== 0) throw new Error(`openpty falló con código ${ret}`);
-  return { masterFd: masterBuf[0], slaveFd: slaveBuf[0] };
+  // Set a sane default size using our non-variadic wrapper
+  const masterFd = masterBuf[0];
+  pty_set_winsize(masterFd, 24, 80);
+  return { masterFd, slaveFd: slaveBuf[0] };
 }
 
 function setWinSize(fd: number, cols: number, rows: number): void {
-  const ws = new Uint16Array([rows, cols, 0, 0]);
-  ioctl(fd, TIOCSWINSZ, ptr(ws));
+  if (cols <= 0 || rows <= 0 || cols > 1000 || rows > 1000) {
+    console.warn(`[terminal.ts] setWinSize: ignoring invalid size ${cols}x${rows}`);
+    return;
+  }
+  const ret = pty_set_winsize(fd, rows, cols);
+  console.log(`[terminal.ts] setWinSize(fd=${fd}, ${cols}x${rows}) ret=${ret}`);
 }
 
 /** Lanza zsh para una sesión y empieza el read loop. Solo se llama una vez por sesión. */
@@ -140,12 +165,36 @@ function spawnShell(workspaceId: string): void {
 
   const zdotdir = ensureZdotdir(workspaceId);
 
-  const child = nodeSpawn("/bin/zsh", ["-i"], {
+  // ── PTY session setup via Python launcher ───────────────────────────────────
+  // Node.js child_process.spawn() dup2's the slave fd to 0/1/2 but does NOT
+  // call setsid() + TIOCSCTTY, so the slave never becomes the controlling
+  // terminal. Without a controlling terminal, curses apps that use job-control
+  // (top, htop, …) fail inside initscr() even though simpler apps (vim) work.
+  //
+  // Fix: spawn Python as the launcher. Python:
+  //   1. os.ttyname(0)  → gets slave PTY path while slave is still fd 0
+  //   2. os.setsid()    → creates a new session (Python is now session leader)
+  //   3. os.open(path)  → opening a TTY as session leader with no controlling
+  //                       terminal makes it the controlling terminal (POSIX/BSD)
+  //   4. os.dup2 + exec → replaces itself with zsh; PID stays the same
+  const pyLauncher = [
+    "import os,sys",
+    "path=os.ttyname(0)",
+    "os.setsid()",
+    "fd=os.open(path,os.O_RDWR)",
+    "[os.dup2(fd,i)for i in(0,1,2)]",
+    "fd>2 and os.close(fd)",
+    "os.execv('/bin/zsh',['/bin/zsh','-i'])",
+  ].join(";");
+
+  const child = nodeSpawn("/usr/bin/python3", ["-c", pyLauncher], {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     stdio: [session.slaveFd, session.slaveFd, session.slaveFd] as any,
     env: {
       ...process.env,
       TERM:                "xterm-256color",
+      TERMINFO:            "/usr/share/terminfo",
+      TERMINFO_DIRS:       "/usr/share/terminfo",
       COLORTERM:           "truecolor",
       FORCE_COLOR:         "3",
       CLICOLOR_FORCE:      "1",
@@ -153,6 +202,10 @@ function spawnShell(workspaceId: string): void {
       STARSHIP_CONFIG:     join(zdotdir, "starship.toml"),
       PROMPT_ADD_NEWLINE:  "false",
       POWERLEVEL9K_PROMPT_ADD_NEWLINE: "false",
+      KITTY_INSTALLATION_DIR: undefined,
+      KITTY_PID:              undefined,
+      KITTY_WINDOW_ID:        undefined,
+      KITTY_LISTEN_ON:        undefined,
     },
     detached: false,
   });
