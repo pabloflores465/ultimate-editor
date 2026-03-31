@@ -41,7 +41,7 @@ html, body {
   font-size: 13px;
 }
 
-#app { width: 100vw; height: 100vh; overflow: hidden; }
+#app { width: 100vw; height: 100vh; overflow: hidden; display: flex; flex-direction: column; }
 
 /* Scrollbars */
 ::-webkit-scrollbar { width: 7px; height: 7px; }
@@ -61,7 +61,8 @@ html, body {
 /* Clipping viewport — prevents overflow during slide */
 .ws-viewport {
   width: 100vw;
-  height: 100vh;
+  flex: 1;
+  min-height: 0;
   overflow: hidden;
   position: relative;
 }

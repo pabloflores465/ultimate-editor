@@ -68,6 +68,7 @@
     { id:"structure", num:"2", label:"Structure" },
     { id:"git",       num:"3", label:"Git" },
     { id:"bookmarks", num:"4", label:"Bookmarks" },
+    { id:"database",  num:"8", label:"Database" },
   ];
 
   function toggleTool(id: string) {
@@ -278,7 +279,7 @@
 ══════════════════════════════════════════ -->
 <div
   id="jb-root"
-  class="flex flex-col w-screen h-screen bg-jb-bg text-jb-text overflow-hidden text-[13px]"
+  class="flex flex-col w-full h-full bg-jb-bg text-jb-text overflow-hidden text-[13px]"
   style:cursor={resizingLeft || resizingRight ? "col-resize" : resizingBottom ? "row-resize" : "default"}
 >
 
@@ -603,6 +604,23 @@
                   <div class="text-[11px] text-jb-muted">{commit.author} · {commit.time}</div>
                 </div>
               {/each}
+            </div>
+
+          {:else if ws.activeTool === "database"}
+            <div class="px-2 py-2 text-[12px]">
+              <div class="text-[11px] font-semibold text-jb-muted mb-2 px-1">CONNECTIONS</div>
+              <div class="flex items-center gap-2 h-[22px] px-2 rounded text-jb-muted hover:bg-jb-hover cursor-pointer italic">
+                <span>+ New connection</span>
+              </div>
+              <div class="mt-4 flex flex-col items-center gap-2 text-jb-muted py-6">
+                <svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" stroke-width="1.2" opacity="0.4">
+                  <ellipse cx="12" cy="5" rx="9" ry="3"/>
+                  <path d="M3 5v4c0 1.657 4.03 3 9 3s9-1.343 9-3V5"/>
+                  <path d="M3 9v4c0 1.657 4.03 3 9 3s9-1.343 9-3V9"/>
+                  <path d="M3 13v4c0 1.657 4.03 3 9 3s9-1.343 9-3v-4"/>
+                </svg>
+                <span class="text-[11px] text-center">No database connections</span>
+              </div>
             </div>
 
           {:else}

@@ -136,6 +136,15 @@ class WorkspaceStore {
     if (ws) ws.name = name;
   }
 
+  reorderWorkspace(fromIdx: number, toIdx: number) {
+    if (fromIdx === toIdx) return;
+    const activeId = this.workspaces[this.activeIndex].id;
+    const items = this.workspaces.splice(fromIdx, 1);
+    this.workspaces.splice(toIdx, 0, items[0]);
+    // Keep activeIndex pointing to the same workspace
+    this.activeIndex = this.workspaces.findIndex((w) => w.id === activeId);
+  }
+
   setRootPath(id: string, path: string) {
     const ws = this.workspaces.find((w) => w.id === id);
     if (ws) ws.project.rootPath = path;

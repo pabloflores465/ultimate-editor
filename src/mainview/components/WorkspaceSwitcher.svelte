@@ -29,6 +29,7 @@
   import EditorLayout from "./EditorLayout.svelte";
   import WorkspacePreviewFull from "./WorkspacePreviewFull.svelte";
   import WorkspaceOverview from "./WorkspaceOverview.svelte";
+  import WorkspaceTabBar from "./WorkspaceTabBar.svelte";
 
   let { children }: { children: import("svelte").Snippet } = $props();
 
@@ -402,6 +403,9 @@
   });
 </script>
 
+<!-- ── Workspace tab bar ──────────────────────────────────── -->
+<WorkspaceTabBar />
+
 <!-- ── Viewport (overflow:hidden clips the 3 panels) ────────── -->
 <div class="ws-viewport">
 
@@ -481,7 +485,7 @@
     position: absolute;
     top: 0;
     width: 100vw;
-    height: 100vh;
+    height: 100%;
     overflow: hidden;
   }
   .ws-slot--prev    { left: -100vw; }
