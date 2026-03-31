@@ -33,6 +33,28 @@
 
   let { children }: { children: import("svelte").Snippet } = $props();
 
+  // ── Tiling drop-zone state ─────────────────────────────────
+  let dropZoneHover = $state<"left" | "right" | "top" | "bottom" | null>(null);
+
+  function onZoneDragOver(e: DragEvent, zone: "left" | "right" | "top" | "bottom") {
+    e.preventDefault();
+    e.dataTransfer!.dropEffect = "move";
+    dropZoneHover = zone;
+  }
+
+  function onZoneDrop(e: DragEvent, zone: "left" | "right" | "top" | "bottom") {
+    e.preventDefault();
+    const idx = workspaceStore.tilingDragWsIdx;
+    if (idx !== null) {
+      workspaceStore.placeTiledWorkspace(idx, zone);
+    }
+    dropZoneHover = null;
+  }
+
+  function onZoneDragLeave() {
+    dropZoneHover = null;
+  }
+
   // ── Track position ─────────────────────────────────────────
   let trackX      = $state(0);             // translateX applied to the 3-slot container
   let trackCss    = $state<string>("none"); // CSS transition (none during spring/drag)
@@ -491,6 +513,68 @@
   </div>
 {/if}
 
+<!-- Tiling drop-zone overlay (shown while dragging a workspace tab) -->
+{#if workspaceStore.tilingDragWsIdx !== null}
+  <!-- svelte-ignore a11y_no_static_element_interactions -->
+  <div class="tile-drop-overlay">
+    <!-- LEFT zone -->
+    <div
+      class="tile-zone tile-zone--left"
+      class:tile-zone--active={dropZoneHover === "left"}
+      ondragover={(e) => onZoneDragOver(e, "left")}
+      ondragleave={onZoneDragLeave}
+      ondrop={(e) => onZoneDrop(e, "left")}
+    >
+      <div class="tile-zone-preview tile-zone-preview--left">
+        <div class="tzp-a tzp-accent"></div>
+        <div class="tzp-b"></div>
+      </div>
+    </div>
+
+    <!-- RIGHT zone -->
+    <div
+      class="tile-zone tile-zone--right"
+      class:tile-zone--active={dropZoneHover === "right"}
+      ondragover={(e) => onZoneDragOver(e, "right")}
+      ondragleave={onZoneDragLeave}
+      ondrop={(e) => onZoneDrop(e, "right")}
+    >
+      <div class="tile-zone-preview tile-zone-preview--right">
+        <div class="tzp-a"></div>
+        <div class="tzp-b tzp-accent"></div>
+      </div>
+    </div>
+
+    <!-- TOP zone -->
+    <div
+      class="tile-zone tile-zone--top"
+      class:tile-zone--active={dropZoneHover === "top"}
+      ondragover={(e) => onZoneDragOver(e, "top")}
+      ondragleave={onZoneDragLeave}
+      ondrop={(e) => onZoneDrop(e, "top")}
+    >
+      <div class="tile-zone-preview tile-zone-preview--top">
+        <div class="tzp-a tzp-accent"></div>
+        <div class="tzp-b"></div>
+      </div>
+    </div>
+
+    <!-- BOTTOM zone -->
+    <div
+      class="tile-zone tile-zone--bottom"
+      class:tile-zone--active={dropZoneHover === "bottom"}
+      ondragover={(e) => onZoneDragOver(e, "bottom")}
+      ondragleave={onZoneDragLeave}
+      ondrop={(e) => onZoneDrop(e, "bottom")}
+    >
+      <div class="tile-zone-preview tile-zone-preview--bottom">
+        <div class="tzp-a"></div>
+        <div class="tzp-b tzp-accent"></div>
+      </div>
+    </div>
+  </div>
+{/if}
+
 <!-- Overview overlay -->
 {#if workspaceStore.overviewOpen}
   <WorkspaceOverview />
@@ -525,6 +609,92 @@
     font-size: 13px;
     color: #555759;
     letter-spacing: 1px;
+  }
+
+  /* ── Tiling drop-zone overlay ──────────────────────────────── */
+  .tile-drop-overlay {
+    position: fixed;
+    top: 38px; /* below tab bar */
+    left: 0; right: 0; bottom: 0;
+    z-index: 500;
+    pointer-events: none;
+  }
+
+  .tile-zone {
+    position: absolute;
+    pointer-events: all;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0.55;
+    transition: opacity 140ms ease, background 140ms ease;
+  }
+
+  /* Zone geometry — cross pattern, no corner overlaps */
+  .tile-zone--left   { left: 0;   top: 0; bottom: 0; width: 18%; }
+  .tile-zone--right  { right: 0;  top: 0; bottom: 0; width: 18%; }
+  .tile-zone--top    { top: 0;    left: 18%; right: 18%; height: 18%; }
+  .tile-zone--bottom { bottom: 0; left: 18%; right: 18%; height: 18%; }
+
+  .tile-zone--active {
+    opacity: 1;
+    background: rgba(78, 155, 222, 0.12);
+  }
+
+  /* Mini preview icon — two rectangles showing how the split will look */
+  .tile-zone-preview {
+    display: flex;
+    gap: 3px;
+    padding: 6px;
+    background: rgba(30, 31, 34, 0.82);
+    border: 1.5px solid rgba(78, 155, 222, 0.35);
+    border-radius: 6px;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.45);
+    backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
+  }
+
+  .tile-zone--active .tile-zone-preview {
+    border-color: rgba(78, 155, 222, 0.75);
+    background: rgba(30, 31, 34, 0.92);
+  }
+
+  /* Horizontal split (left/right) */
+  .tile-zone-preview--left,
+  .tile-zone-preview--right {
+    flex-direction: row;
+    width: 36px;
+    height: 26px;
+  }
+  .tile-zone-preview--left  .tzp-a,
+  .tile-zone-preview--left  .tzp-b,
+  .tile-zone-preview--right .tzp-a,
+  .tile-zone-preview--right .tzp-b {
+    flex: 1;
+    border-radius: 2px;
+    background: #3c3f41;
+  }
+
+  /* Vertical split (top/bottom) */
+  .tile-zone-preview--top,
+  .tile-zone-preview--bottom {
+    flex-direction: column;
+    width: 26px;
+    height: 36px;
+  }
+  .tile-zone-preview--top  .tzp-a,
+  .tile-zone-preview--top  .tzp-b,
+  .tile-zone-preview--bottom .tzp-a,
+  .tile-zone-preview--bottom .tzp-b {
+    flex: 1;
+    border-radius: 2px;
+    background: #3c3f41;
+  }
+
+  /* Accent = the pane where the dragged workspace will land */
+  .tzp-accent {
+    background: #4e7bf0 !important;
+    opacity: 0.85;
   }
 
   /* Progress dots */

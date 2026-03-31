@@ -219,9 +219,11 @@ class WorkspaceStore {
   }
 
   // ── Workspace tiling ─────────────────────────────────────────
-  tilingLayout = $state<"single" | "vsplit" | "hsplit" | "quarter">("single");
-  tiledIndices = $state<number[]>([0]);
-  tiledFocus   = $state(0);
+  tilingLayout    = $state<"single" | "vsplit" | "hsplit" | "quarter">("single");
+  tiledIndices    = $state<number[]>([0]);
+  tiledFocus      = $state(0);
+  /** Index of the workspace tab currently being dragged for tile-drop (null = not dragging) */
+  tilingDragWsIdx = $state<number | null>(null);
 
   setTilingLayout(layout: "single" | "vsplit" | "hsplit" | "quarter") {
     const count = layout === "quarter" ? 4 : layout === "single" ? 1 : 2;
@@ -233,6 +235,30 @@ class WorkspaceStore {
     this.tiledIndices = Array.from({ length: count }, (_, i) => i);
     if (this.tiledFocus >= count) this.tiledFocus = 0;
     this.activeIndex = this.tiledIndices[this.tiledFocus];
+  }
+
+  /**
+   * Called when a workspace tab is dropped onto a directional zone.
+   * Creates a 2-way split between the dragged workspace and the currently
+   * focused workspace, regardless of the previous tiling state.
+   */
+  placeTiledWorkspace(draggedIdx: number, zone: "left" | "right" | "top" | "bottom") {
+    const baseIdx = this.activeIndex;
+    // Ensure the dragged workspace exists
+    while (this.workspaces.length <= draggedIdx) {
+      this.workspaces.push(createWorkspace(`Workspace ${this.workspaces.length + 1}`));
+    }
+    if (zone === "left" || zone === "right") {
+      this.tilingLayout = "vsplit";
+      this.tiledIndices = zone === "left" ? [draggedIdx, baseIdx] : [baseIdx, draggedIdx];
+    } else {
+      this.tilingLayout = "hsplit";
+      this.tiledIndices = zone === "top" ? [draggedIdx, baseIdx] : [baseIdx, draggedIdx];
+    }
+    // Keep focus on the base (original) workspace
+    this.tiledFocus   = this.tiledIndices.indexOf(baseIdx);
+    this.activeIndex  = baseIdx;
+    this.tilingDragWsIdx = null;
   }
 
   focusTile(tileIdx: number) {

@@ -2,6 +2,21 @@
   import { workspaceStore } from "../stores/workspaceStore.svelte";
   import WorkspaceCard from "./WorkspaceCard.svelte";
 
+  let searchQuery = $state("");
+  let searchInput: HTMLInputElement | undefined = $state();
+
+  $effect(() => {
+    if (searchInput) searchInput.focus();
+  });
+
+  const filteredWorkspaces = $derived(
+    searchQuery.trim() === ""
+      ? workspaceStore.workspaces.map((ws, i) => ({ ws, i }))
+      : workspaceStore.workspaces
+          .map((ws, i) => ({ ws, i }))
+          .filter(({ ws }) => ws.name.toLowerCase().includes(searchQuery.toLowerCase()))
+  );
+
   // Custom Svelte transition using Material Decelerate easing
   // cubic-bezier(0, 0, 0.2, 1) ≈ t^(1/3) approximation
   function overviewTransition(node: Element, { duration = 220 } = {}) {
@@ -21,6 +36,16 @@
   function handleBackdropClick(e: MouseEvent) {
     if (e.target === e.currentTarget) workspaceStore.toggleOverview();
   }
+
+  function handleKeydown(e: KeyboardEvent) {
+    if (e.key === "Escape") {
+      if (searchQuery) {
+        searchQuery = "";
+      } else {
+        workspaceStore.toggleOverview();
+      }
+    }
+  }
 </script>
 
 <!-- Full-screen overview overlay -->
@@ -32,7 +57,7 @@
   tabindex="-1"
   transition:overviewTransition
   onclick={handleBackdropClick}
-  onkeydown={(e) => { if (e.key === "Escape") workspaceStore.toggleOverview(); }}
+  onkeydown={handleKeydown}
 >
   <!-- Header -->
   <div class="ws-overview-header">
@@ -48,9 +73,28 @@
     </span>
   </div>
 
+  <!-- Search bar -->
+  <div class="ws-overview-search">
+    <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="#c0c0c0" stroke-width="1.5" style="flex-shrink:0;">
+      <circle cx="6.5" cy="6.5" r="5"/>
+      <path d="M10.5 10.5L14 14"/>
+    </svg>
+    <input
+      bind:this={searchInput}
+      bind:value={searchQuery}
+      type="text"
+      placeholder="Filter workspaces…"
+      class="ws-overview-search-input"
+      onclick={(e) => e.stopPropagation()}
+    />
+    {#if searchQuery}
+      <button class="ws-overview-search-clear" onclick={(e) => { e.stopPropagation(); searchQuery = ""; searchInput?.focus(); }}>✕</button>
+    {/if}
+  </div>
+
   <!-- Card grid -->
   <div class="ws-overview-grid">
-    {#each workspaceStore.workspaces as ws, i (ws.id)}
+    {#each filteredWorkspaces as { ws, i } (ws.id)}
       <WorkspaceCard
         {ws}
         active={i === workspaceStore.activeIndex}
@@ -59,6 +103,9 @@
         ondelete={() => workspaceStore.removeWorkspace(ws.id)}
       />
     {/each}
+    {#if filteredWorkspaces.length === 0}
+      <p style="color: rgba(255,255,255,0.35); font-size:13px; grid-column:1/-1; text-align:center; margin:0;">No workspaces match "{searchQuery}"</p>
+    {/if}
 
     <!-- Add new workspace button -->
     <button

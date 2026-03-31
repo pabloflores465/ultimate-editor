@@ -1147,19 +1147,6 @@
   <!-- ══ BOTTOM TOOL STRIP ════════════════════════════════════ -->
   <div class="relative flex items-center h-[27px] bg-jb-panel border-t border-jb-border flex-shrink-0 px-1">
     <div class="flex items-center gap-0.5">
-      <!-- Toolbar toggle -->
-      <button
-        title={toolbarOpen ? "Hide toolbar" : "Show toolbar"}
-        class="flex items-center justify-center w-[26px] h-[22px] border-none bg-transparent cursor-pointer transition-colors rounded
-          {toolbarOpen ? 'text-jb-text2 bg-jb-hover' : 'text-jb-muted hover:text-jb-text hover:bg-jb-hover'}"
-        onclick={() => toolbarOpen = !toolbarOpen}
-      >
-        <svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.2">
-          <rect x="1.5" y="1.5" width="13" height="13" rx="1.5"/>
-          <line x1="1.5" y1="5.5" x2="14.5" y2="5.5"/>
-        </svg>
-      </button>
-      <div class="w-px h-3.5 bg-jb-border mx-0.5"></div>
       <button
         title={ws.leftPanelOpen ? "Hide left sidebar" : "Show left sidebar"}
         class="flex items-center justify-center w-[26px] h-[22px] text-[12px] font-medium border-none bg-transparent cursor-pointer transition-colors rounded
@@ -1171,6 +1158,18 @@
         <svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.2">
           <rect x="1.5" y="1.5" width="13" height="13" rx="1.5"/>
           <line x1="5" y1="1.5" x2="5" y2="14.5"/>
+        </svg>
+      </button>
+      <!-- Toolbar toggle — placed before the bottom panel toggle -->
+      <button
+        title={toolbarOpen ? "Hide toolbar" : "Show toolbar"}
+        class="flex items-center justify-center w-[26px] h-[22px] border-none bg-transparent cursor-pointer transition-colors rounded
+          {toolbarOpen ? 'text-jb-text2 bg-jb-hover' : 'text-jb-muted hover:text-jb-text hover:bg-jb-hover'}"
+        onclick={() => toolbarOpen = !toolbarOpen}
+      >
+        <svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.2">
+          <rect x="1.5" y="1.5" width="13" height="13" rx="1.5"/>
+          <line x1="1.5" y1="5.5" x2="14.5" y2="5.5"/>
         </svg>
       </button>
       <button

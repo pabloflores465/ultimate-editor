@@ -9,6 +9,8 @@
     dragIdx = idx;
     e.dataTransfer!.effectAllowed = "move";
     e.dataTransfer!.setData("text/plain", String(idx));
+    // Signal WorkspaceSwitcher to show tiling drop zones
+    workspaceStore.tilingDragWsIdx = idx;
   }
 
   function onDragOver(e: DragEvent, idx: number) {
@@ -24,11 +26,14 @@
     }
     dragIdx = null;
     dragOverIdx = null;
+    workspaceStore.tilingDragWsIdx = null;
   }
 
   function onDragEnd() {
     dragIdx = null;
     dragOverIdx = null;
+    // Clear only if placeTiledWorkspace hasn't already done so
+    workspaceStore.tilingDragWsIdx = null;
   }
 
   // ── Double-click to rename ───────────────────────────────────
