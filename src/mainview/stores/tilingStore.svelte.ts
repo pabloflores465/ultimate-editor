@@ -132,6 +132,20 @@ export function countTerminals(root: TilingNode | null): number {
   return countTerminals(root.first) + countTerminals(root.second);
 }
 
+export function updateRatio(root: TilingNode, splitId: string, newRatio: number): TilingNode {
+  if (root.id === splitId && root.type === "split") {
+    return { ...root, ratio: Math.max(0.1, Math.min(0.9, newRatio)) };
+  }
+  if (root.type === "split") {
+    return {
+      ...root,
+      first: updateRatio(root.first, splitId, newRatio),
+      second: updateRatio(root.second, splitId, newRatio),
+    };
+  }
+  return root;
+}
+
 export interface CloseResult {
   closedId: string | null;
   newTerminalId: string | null;
@@ -240,6 +254,11 @@ export class TilingStore {
 
   setActive(terminalId: string): void {
     this.activeTerminalId = terminalId;
+  }
+
+  setRatio(splitId: string, newRatio: number): void {
+    if (!this.root) return;
+    this.root = updateRatio(this.root, splitId, newRatio);
   }
 
   reset(prefix: string): string {

@@ -169,7 +169,6 @@
     overflow-y: scroll !important;
     overflow-x: auto !important;
     background-color: #1e1f22 !important;
-    min-width: 100%;
   }
   :global(.terminal-host .xterm-viewport::-webkit-scrollbar) {
     width: 10px;
@@ -189,9 +188,11 @@
   :global(.terminal-host .xterm-viewport::-webkit-scrollbar-corner) {
     background: #2b2d30;
   }
-  /* Forzar line-height compacto — sin espacio extra entre líneas */
   :global(.terminal-host .xterm-rows) {
     line-height: 1 !important;
-    min-width: max-content !important;
+  }
+  :global(.terminal-host .composition-view) {
+    background: #1e1f22 !important;
+    color: #a9b7c6 !important;
   }
 </style>

@@ -1007,6 +1007,7 @@
                     <TerminalLayout
                       node={tiling.root}
                       terminalIds={allTerminalIds}
+                      {tiling}
                       onActivate={handleActivateTerm}
                     >
                       {#snippet children(termId)}
