@@ -79,12 +79,13 @@
   const EASE_SPRING = "cubic-bezier(0.34, 1.56, 0.64, 1)";    // spring with slight overshoot
 
   // ── Spring physics constants ────────────────────────────────
-  // Snap:   critically damped   → no overshoot, fast. ζ = b/(2√k) = 57/(2√800) ≈ 1.0
-  // Cancel: critically damped   → no overshoot, clean return. ζ = 36/(2√320) ≈ 1.0
+  // Snap:   critically damped → no overshoot, fast.  ζ = 57/(2√800) ≈ 1.0
+  // Cancel: slightly overdamped (KDE-style, ζ=1.1) → smooth return, no bounce.
+  //         b = 2·√k·ζ = 2·√300·1.1 ≈ 38.1
   const SNAP_K = 800;
   const SNAP_B = 57;
-  const BACK_K = 320;
-  const BACK_B = 36;
+  const BACK_K = 300;
+  const BACK_B = 38;
 
   // ── Momentum guard ─────────────────────────────────────────
   // macOS trackpads keep firing momentum scroll events for 1–2s after the
@@ -93,23 +94,6 @@
   // block keyboard shortcuts (goNext/goPrev) — only wheel-driven gestures.
   let lastSnapAt = 0;
   const MOMENTUM_GUARD_MS = 500;
-
-  // ── Edge rubber-band decay (runs in parallel with gesture) ───
-  // macOS pulls the rubber-band back continuously — it doesn't wait for
-  // the gesture to end.  This rAF loop decays gx toward 0 every frame;
-  // wheel events push gx out.  When momentum weakens, the decay wins.
-  let edgeDecayId: number | null = null;
-  const MAX_RUBBER    = 70;     // max rubber-band displacement (px)
-  const EDGE_DECAY_RATE = 12;   // exponential decay rate (half-life ≈ 58ms)
-
-  function rubberBand(g: number): number {
-    const sign = g < 0 ? -1 : 1;
-    return sign * MAX_RUBBER * (1 - Math.exp(-Math.abs(g) / (MAX_RUBBER * 4)));
-  }
-
-  function killEdgeDecay() {
-    if (edgeDecayId !== null) { cancelAnimationFrame(edgeDecayId); edgeDecayId = null; }
-  }
 
   // ── Spring animation engine ─────────────────────────────────
   let rafId: number | null = null;
@@ -317,45 +301,11 @@
 
       gestureDir = gx < -8 ? 1 : gx > 8 ? -1 : 0;
 
-      // Rubber-band at edges (no adjacent workspace)
-      // Uses a parallel rAF decay so the band starts returning immediately
-      // (like macOS) instead of waiting for the gesture to fully end.
-      const atEdge = (gx < 0 && !nextWs) || (gx > 0 && !prevWs);
-      if (atEdge) {
-        trackX = rubberBand(gx);
-        killEdgeDecay(); // restart — we'll fire a fresh rAF from the latest gx
+      // Hard clamp at edges (no adjacent workspace) — same as GNOME/KDE.
+      // No rubber-band, no movement. Just a wall.
+      if (gx < 0 && !nextWs) { gx = 0; trackX = 0; return; }
+      if (gx > 0 && !prevWs) { gx = 0; trackX = 0; return; }
 
-        // Start edge decay loop: every frame, decay gx and update trackX.
-        // Wheel events keep pushing gx out; when they weaken, decay wins.
-        let lastFrame = -1;
-        edgeDecayId = requestAnimationFrame(function edgeTick(t: number) {
-          if (lastFrame < 0) { lastFrame = t; edgeDecayId = requestAnimationFrame(edgeTick); return; }
-          const dtSec = Math.min((t - lastFrame) / 1000, 0.033);
-          lastFrame = t;
-
-          gx   *= Math.exp(-EDGE_DECAY_RATE * dtSec);
-          velX *= Math.exp(-EDGE_DECAY_RATE * dtSec);
-          trackX = rubberBand(gx);
-
-          if (Math.abs(gx) < 2) {
-            trackX     = 0;
-            gx         = 0;
-            velX       = 0;
-            gestureDir = 0;
-            phase      = "idle";
-            edgeDecayId = null;
-            lastSnapAt = Date.now();
-            if (wheelEndTimer) { clearTimeout(wheelEndTimer); wheelEndTimer = null; }
-            return;
-          }
-          edgeDecayId = requestAnimationFrame(edgeTick);
-        });
-
-        // At edge: skip snap-threshold checks and the normal end-timer.
-        return;
-      }
-
-      killEdgeDecay(); // leaving edge → cancel any running decay
       trackX = gx; // 1:1 — workspace sticks to finger
 
       // ── Immediate commit on clear flick or large drag ─────
@@ -435,11 +385,10 @@
 
       // Touch: dx positive = finger moved right = going to PREV workspace
       gestureDir = dx < -8 ? 1 : dx > 8 ? -1 : 0;
-      if ((dx < 0 && !nextWs) || (dx > 0 && !prevWs)) {
-        trackX = rubberBand(dx);
-      } else {
-        trackX = dx; // For touch: dx same sign as visual movement (+ = right = prev)
-      }
+      // Hard clamp at edges
+      if (dx < 0 && !nextWs) { trackX = 0; return; }
+      if (dx > 0 && !prevWs) { trackX = 0; return; }
+      trackX = dx; // For touch: dx same sign as visual movement (+ = right = prev)
     };
 
     const onTouchEnd = (e: TouchEvent) => {
@@ -482,7 +431,6 @@
       window.removeEventListener("touchend",   onTouchEnd);
       window.removeEventListener("keydown",    onKeydown);
       if (wheelEndTimer) clearTimeout(wheelEndTimer);
-      killEdgeDecay();
     };
   });
 </script>
