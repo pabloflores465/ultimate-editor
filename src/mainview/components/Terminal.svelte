@@ -160,7 +160,7 @@
   }
   :global(.terminal-host .xterm-viewport) {
     overflow-y: scroll !important;
-    overflow-x: scroll !important;
+    overflow-x: auto !important;
     background-color: #1e1f22 !important;
     min-width: 100%;
   }

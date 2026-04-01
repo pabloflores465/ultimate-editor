@@ -205,7 +205,7 @@
   };
 
   // ── Tiling terminal state ──────────────────────────────────────────────────
-  import { TilingStore, findAllTerminals, findNode } from "../stores/tilingStore.svelte";
+  import { TilingStore } from "../stores/tilingStore.svelte";
   import TerminalLayout from "./TerminalLayout.svelte";
   let tiling = new TilingStore();
 
@@ -941,7 +941,7 @@
                 class:bg-jb-bg={termFullscreen}
               >
                 <!-- ── Terminal tab bar ── -->
-                <div class="flex items-center bg-jb-panel h-[26px] border-b border-jb-border flex-shrink-0 px-1 gap-0 text-[11px] min-w-0 overflow-hidden">
+                <div class="flex items-center bg-jb-panel h-[26px] border-b border-jb-border flex-shrink-0 px-1 gap-0 text-[11px]">
 
                   <!-- Terminal tabs -->
                   {#each tiling.terminals as term (term.id)}
@@ -957,10 +957,10 @@
                       >{term.label}</button>
                       {#if tiling.count > 1}
                         <button
-                          class="w-[14px] h-[14px] flex items-center justify-center rounded bg-transparent border-none cursor-pointer text-jb-muted hover:text-jb-text hover:bg-jb-hover opacity-0 group-hover:opacity-100 text-[9px] -ml-1 mr-1 flex-shrink-0"
+                          class="w-4 h-4 flex items-center justify-center rounded bg-transparent border-none cursor-pointer text-jb-muted hover:text-jb-text hover:bg-jb-hover text-[11px] leading-none -ml-1 mr-0.5 flex-shrink-0"
                           title="Close terminal"
                           onclick={(e) => { e.stopPropagation(); handleCloseTerm(term.id); }}
-                        >✕</button>
+                        >×</button>
                       {/if}
                     </div>
                   {/each}
@@ -973,6 +973,26 @@
                       onclick={() => { if (tiling.activeTerminal) handleSplit(tiling.activeTerminal.id, "vertical"); }}
                       class="w-6 h-6 flex items-center justify-center rounded text-jb-muted hover:bg-jb-hover hover:text-jb-text bg-transparent border-none cursor-pointer text-[13px]"
                     >＋</button>
+                    <!-- Split vertical -->
+                    <button
+                      title="Split vertically"
+                      onclick={() => { if (tiling.activeTerminal) handleSplit(tiling.activeTerminal.id, "vertical"); }}
+                      class="w-6 h-6 flex items-center justify-center rounded text-jb-muted hover:bg-jb-hover hover:text-jb-text bg-transparent border-none cursor-pointer"
+                    >
+                      <svg viewBox="0 0 14 14" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.2">
+                        <rect x="1" y="1" width="12" height="12" rx="1"/><line x1="7" y1="1" x2="7" y2="13"/>
+                      </svg>
+                    </button>
+                    <!-- Split horizontal -->
+                    <button
+                      title="Split horizontally"
+                      onclick={() => { if (tiling.activeTerminal) handleSplit(tiling.activeTerminal.id, "horizontal"); }}
+                      class="w-6 h-6 flex items-center justify-center rounded text-jb-muted hover:bg-jb-hover hover:text-jb-text bg-transparent border-none cursor-pointer"
+                    >
+                      <svg viewBox="0 0 14 14" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.2">
+                        <rect x="1" y="1" width="12" height="12" rx="1"/><line x1="1" y1="7" x2="13" y2="7"/>
+                      </svg>
+                    </button>
                     <!-- Fullscreen -->
                     <button
                       title={termFullscreen ? "Exit fullscreen" : "Fullscreen"}
@@ -985,47 +1005,30 @@
                 <!-- ── Tiling pane area ── -->
                 <div class="flex-1 min-h-0 overflow-hidden relative">
                   {#if tiling.root}
-                    {@const renderTerminal = (termId: string) => {
-                      const term = findNode(tiling.root, termId);
-                      return { termId, term };
-                    }}
                     <TerminalLayout
                       node={tiling.root}
                       terminalIds={allTerminalIds}
                       onActivate={handleActivateTerm}
                     >
                       {#snippet children(termId)}
-                        {@const term = findNode(tiling.root, termId)}
-                        <div class="flex flex-col h-full">
-                          <div class="terminal-toolbar flex items-center gap-1 px-1 py-0.5 bg-jb-panel2 border-b border-jb-border text-[10px] flex-shrink-0">
-                            <span class="text-jb-muted">{term?.type === "terminal" ? term.label : "zsh"}</span>
-                            <div class="flex-1"></div>
+                        <div class="relative w-full h-full group/pane">
+                          <Terminal
+                            id={termId}
+                            onInput={(b64) => handleTermInput(termId, b64)}
+                            onResize={(cols, rows) => handleTermResize(termId, cols, rows)}
+                            onMounted={(writeFn) => handleTermMounted(termId, writeFn)}
+                          />
+                          {#if tiling.count > 1}
                             <button
-                              title="Split vertical"
-                              onclick={(e) => { e.stopPropagation(); handleSplit(termId, "vertical"); }}
-                              class="w-5 h-5 flex items-center justify-center rounded text-jb-muted hover:bg-jb-hover hover:text-jb-text bg-transparent border-none cursor-pointer text-[9px]"
-                            >⎮</button>
-                            <button
-                              title="Split horizontal"
-                              onclick={(e) => { e.stopPropagation(); handleSplit(termId, "horizontal"); }}
-                              class="w-5 h-5 flex items-center justify-center rounded text-jb-muted hover:bg-jb-hover hover:text-jb-text bg-transparent border-none cursor-pointer text-[9px]"
-                            >⎯</button>
-                            {#if tiling.count > 1}
-                              <button
-                                title="Close"
-                                onclick={(e) => { e.stopPropagation(); handleCloseTerm(termId); }}
-                                class="w-5 h-5 flex items-center justify-center rounded text-jb-muted hover:bg-jb-hover hover:text-jb-text bg-transparent border-none cursor-pointer text-[9px]"
-                              >✕</button>
-                            {/if}
-                          </div>
-                          <div class="flex-1 min-h-0">
-                            <Terminal
-                              id={termId}
-                              onInput={(b64) => handleTermInput(termId, b64)}
-                              onResize={(cols, rows) => handleTermResize(termId, cols, rows)}
-                              onMounted={(writeFn) => handleTermMounted(termId, writeFn)}
-                            />
-                          </div>
+                              class="group/closebtn absolute top-1.5 right-1.5 z-10 w-[18px] h-[18px] flex items-center justify-center rounded-full bg-[#3c3f41] hover:bg-[#4c5052] opacity-0 group-hover/pane:opacity-100 transition-opacity cursor-pointer border-none"
+                              title="Close terminal"
+                              onclick={(e) => { e.stopPropagation(); handleCloseTerm(termId); }}
+                            >
+                              <svg viewBox="0 0 10 10" width="9" height="9" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" class="group-hover/closebtn:[stroke:#ff5f57]">
+                                <line x1="2" y1="2" x2="8" y2="8"/><line x1="8" y1="2" x2="2" y2="8"/>
+                              </svg>
+                            </button>
+                          {/if}
                         </div>
                       {/snippet}
                     </TerminalLayout>
