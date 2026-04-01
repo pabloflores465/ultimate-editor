@@ -283,7 +283,8 @@
   }
 
   .tab-close {
-    display: none;
+    display: flex;
+    visibility: hidden;
     align-items: center;
     justify-content: center;
     width: 16px;
@@ -302,7 +303,7 @@
 
   .tab:hover .tab-close,
   .tab--active .tab-close {
-    display: flex;
+    visibility: visible;
   }
 
   .tab-close:hover {
