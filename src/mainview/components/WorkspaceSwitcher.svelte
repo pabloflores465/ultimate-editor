@@ -506,20 +506,6 @@
       </div>
     </div>
 
-    <!-- Position indicator dots — appear during gesture / transition -->
-    {#if workspaceStore.workspaces.length > 1}
-      <div
-        class="ws-dots"
-        class:ws-dots--visible={gestureDir !== 0 || busy}
-      >
-        {#each workspaceStore.workspaces as _, i}
-          <div
-            class="ws-dot"
-            class:ws-dot--active={i === workspaceStore.activeIndex}
-          ></div>
-        {/each}
-      </div>
-    {/if}
   </div>
 {/if}
 
@@ -707,31 +693,4 @@
     opacity: 0.85;
   }
 
-  /* Progress dots */
-  .ws-dots {
-    position: fixed;
-    bottom: 50px;
-    left: 50%;
-    transform: translateX(-50%);
-    display: flex;
-    gap: 7px;
-    align-items: center;
-    z-index: 100;
-    pointer-events: none;
-    opacity: 0;
-    transition: opacity 180ms ease;
-  }
-  .ws-dots--visible { opacity: 1; }
-
-  .ws-dot {
-    width: 6px;
-    height: 6px;
-    border-radius: 50%;
-    background: rgba(255, 255, 255, 0.28);
-    transition: background 150ms ease, transform 150ms ease;
-  }
-  .ws-dot--active {
-    background: rgba(255, 255, 255, 0.88);
-    transform: scale(1.35);
-  }
 </style>

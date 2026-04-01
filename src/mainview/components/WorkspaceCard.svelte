@@ -30,7 +30,11 @@
       class="ws-card-delete"
       title="Close workspace"
       onclick={(e) => { e.stopPropagation(); ondelete(); }}
-    >✕</button>
+    >
+      <svg viewBox="0 0 10 10" width="9" height="9" fill="none" stroke="white" stroke-width="2" stroke-linecap="round">
+        <line x1="2" y1="2" x2="8" y2="8"/><line x1="8" y1="2" x2="2" y2="8"/>
+      </svg>
+    </button>
   {/if}
 
   <!-- Miniature IDE preview -->

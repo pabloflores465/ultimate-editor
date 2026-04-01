@@ -339,27 +339,28 @@ html, body {
   width: 18px;
   height: 18px;
   border-radius: 50%;
-  background: rgba(255,95,87,0.85);
+  background: #3c3f41;
   border: none;
-  color: white;
-  font-size: 11px;
-  line-height: 1;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
   opacity: 0;
-  transition: opacity 120ms ease, transform 120ms ease;
-  transform: scale(0.8);
+  transition: opacity 120ms ease, background 120ms ease;
   z-index: 10;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.5);
 }
 .ws-card:hover .ws-card-delete {
   opacity: 1;
-  transform: scale(1);
 }
 .ws-card-delete:hover {
-  background: #ff5f57;
-  transform: scale(1.15) !important;
+  background: #4c5052;
+}
+.ws-card-delete svg {
+  display: block;
+}
+.ws-card-delete:hover svg {
+  stroke: #ff5f57;
 }
 
 /* Add new workspace button */
