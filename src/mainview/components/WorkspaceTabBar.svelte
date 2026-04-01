@@ -243,14 +243,19 @@
   }
 
   .tab:hover {
-    background: #27282c;
-    color: #bbbec4;
+    background: #33353a;
+    color: #dfe1e5;
   }
 
   .tab--active {
     background: #2b2d30;
-    color: #dfe1e5;
+    color: #ffffff;
     border-bottom: 2px solid #4e7bf0;
+  }
+
+  .tab--active:hover {
+    background: #35373c;
+    color: #ffffff;
   }
 
   .tab--dragging {
