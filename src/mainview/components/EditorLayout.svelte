@@ -337,8 +337,7 @@
           <span class="block w-[13px] h-[1.5px] bg-jb-muted rounded"></span>
         </button>
         {#if hamburgerOpen}
-          <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
-          <div class="fixed inset-0 z-40" onclick={() => hamburgerOpen = false}></div>
+          <button class="fixed inset-0 z-40 cursor-default border-none bg-transparent p-0" onclick={() => hamburgerOpen = false} aria-label="Close menu"></button>
           <div class="absolute top-full left-0 mt-px bg-jb-panel border border-jb-border rounded shadow-lg z-50 py-1 min-w-[160px]">
             {#each ["File","Edit","View","Navigate","Code","Refactor","Build","Run","Tools","Git","Window","Help"] as m}
               <span class="block px-4 py-1.5 text-[12px] text-jb-text cursor-pointer hover:bg-jb-select whitespace-nowrap">
@@ -1281,7 +1280,6 @@
 
   /* Toolbar & strip buttons don't drag */
   button { -webkit-app-region: no-drag; }
-  a      { -webkit-app-region: no-drag; }
 
   /* Agent streaming dots */
   @keyframes agent-pulse {

@@ -86,9 +86,10 @@
       style:top="{bounds.y}%"
       style:width="{bounds.w}%"
       style:height="{bounds.h}%"
-      onclick={() => onActivate(termId)}
-      role="region"
+      role="button"
       tabindex="-1"
+      onclick={() => onActivate(termId)}
+      onkeydown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onActivate(termId); } }}
     >
       {@render children(termId)}
     </div>

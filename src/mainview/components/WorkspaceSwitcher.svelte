@@ -450,11 +450,13 @@
   >
     {#each workspaceStore.tiledIndices as wsIdx, tileIdx}
       {@const tileWs = workspaceStore.workspaces[wsIdx]}
-      <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
       <div
         class="ws-tile"
         class:ws-tile--focused={workspaceStore.tiledFocus === tileIdx}
+        role="button"
+        tabindex="0"
         onclick={() => workspaceStore.focusTile(tileIdx)}
+        onkeydown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); workspaceStore.focusTile(tileIdx); } }}
       >
         <EditorLayout
           ws={tileWs}
