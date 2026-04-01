@@ -1,6 +1,5 @@
-import { BrowserWindow, Updater, WGPUView, ApplicationMenu, BrowserView } from "electrobun/bun";
+import { BrowserWindow, Updater, ApplicationMenu, BrowserView } from "electrobun/bun";
 const { setApplicationMenu, on } = ApplicationMenu;
-import { renderTriangle } from "./webgpu-renderer";
 import { createTerminalForWorkspace, writeToTty, resizePty, destroyTerminal } from "./terminal";
 
 const DEV_SERVER_PORT = 5173;
@@ -163,20 +162,6 @@ function sendToWebview(
     (mainWindow.webview.rpc?.send as any)?.[name]?.(payload);
   } catch {}
 }
-
-// ── WebGPU polling ───────────────────────────────────────────────────────────
-const renderedViews = new Set<number>();
-setInterval(() => {
-  for (const view of WGPUView.getAll()) {
-    if (!renderedViews.has(view.id) && view.ptr) {
-      renderedViews.add(view.id);
-      console.log(`[WebGPU] New WGPUView ${view.id} detected — starting renderer`);
-      renderTriangle(view).catch((err) =>
-        console.error(`[WebGPU] Renderer error on view ${view.id}:`, err),
-      );
-    }
-  }
-}, 200);
 
 // ── Menu Bar ─────────────────────────────────────────────────────────────────
 setApplicationMenu([

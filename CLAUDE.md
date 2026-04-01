@@ -27,8 +27,7 @@ Editor de código de escritorio construido con **Bun + Electrobun** (proceso pri
 src/
 ├── bun/                        # Proceso principal (Bun/Node runtime)
 │   ├── index.ts                # Ventana, RPC, menús, enrutamiento de terminales
-│   ├── terminal.ts             # Motor PTY multi-sesión (zsh via libSystem FFI)
-│   └── webgpu-renderer.ts      # Renderizado WebGPU (triángulo de demo)
+│   └── terminal.ts             # Motor PTY multi-sesión (zsh via libSystem FFI)
 │
 └── mainview/                   # Proceso renderer (Svelte 5)
     ├── main.ts                 # Punto de entrada Svelte
@@ -175,3 +174,17 @@ bun run build:canary  # Build de distribución canary
 - **workspaceId como clave universal**: cualquier recurso per-workspace (PTY, buffer, estado) se indexa por `ws.id` (UUID estable durante la sesión).
 - **Terminal deferred spawn**: el shell zsh no se lanza hasta recibir `terminal:resize` para evitar output mal formateado a 80×24.
 - **No node-pty**: los módulos nativos `.node` no funcionan en el bundle de Electrobun. Se usa Bun FFI + `libSystem.B.dylib` directamente.
+
+---
+
+## Problemas conocidos
+
+### DevTools docked causa desplazamiento de UI
+
+**Síntoma:** Cuando las DevTools están en modo docked (unidas a la ventana principal) y enfocas el panel de inspección, toda la UI de la aplicación se desplaza hacia abajo a la posición del panel de DevTools. Al cerrar las DevTools, la UI queda deslocada.
+
+**Causa:** Bug en Electrobun/WebKit cuando las DevTools están docked. El webview no redimensiona correctamente cuando el panel de inspección obtiene foco.
+
+**Solución:** Usar DevTools en **ventana separada (undocked)**. En las DevTools, usar el botón de "undock" (separar) para que funcione como ventana independiente. Este comportamiento no ocurre con DevTools undocked.
+
+**Alternativa:** Reportar el bug en https://github.com/blackboardsh/electrobun/issues
