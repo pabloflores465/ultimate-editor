@@ -488,7 +488,7 @@
     {#each workspaceStore.tiledIndices as wsIdx, tileIdx}
       {@const tileWs = workspaceStore.workspaces[wsIdx]}
       {#if tileIdx === 1 && (layout === "vsplit" || layout === "hsplit")}
-        <!-- svelte-ignore a11y_no_static_element_interactions -->
+        <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
         <div
           class="ws-tile-divider {layout === 'vsplit' ? 'ws-tile-divider--col' : 'ws-tile-divider--row'}"
           role="separator"
@@ -515,14 +515,14 @@
     {/each}
     {#if layout === "quarter"}
       <!-- Overlay dividers for quarter layout -->
-      <!-- svelte-ignore a11y_no_static_element_interactions -->
+      <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
       <div
         class="ws-tile-divider ws-tile-divider--col"
         role="separator"
         style="position:absolute; top:0; bottom:0; left:{ratioCol * 100}%; transform:translateX(-50%); z-index:3;"
         onmousedown={(e) => onTilingResizeStart("col", e)}
       ></div>
-      <!-- svelte-ignore a11y_no_static_element_interactions -->
+      <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
       <div
         class="ws-tile-divider ws-tile-divider--row"
         role="separator"

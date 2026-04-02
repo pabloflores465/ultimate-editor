@@ -26,6 +26,7 @@
 		"@sveltejs/vite-plugin-svelte": "^7.0.0",
 		"@tailwindcss/vite": "^4.2.2",
 		"@types/bun": "latest",
+		"@vue/compiler-sfc": "^3.5.31",
 		"concurrently": "^9.1.0",
 		"svelte": "^5.14.1",
 		"tailwindcss": "^4.2.2",
