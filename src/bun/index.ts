@@ -26,8 +26,12 @@ type AppSchema = {
       "terminal:destroy": { workspaceId: string };
       /** Execute a run command in the terminal */
       "run:execute": { command: string; workspaceId: string };
+      /** Set workspace root path for auto-cd on terminal creation */
+      "workspace:setRootPath": { workspaceId: string; path: string };
       /** Get current working directory */
       "get-cwd": Record<string, never>;
+      /** Open native folder picker dialog */
+      "folder:pick": { workspaceId: string };
       /** Git operations */
       "git:open": { path: string };
       "git:status": { path: string };
@@ -49,10 +53,11 @@ type AppSchema = {
       "menu:open-file": { path: string };
       "menu:save-file": Record<string, never>;
       "get-cwd": { cwd: string };
-      "git:status": { isRepo: boolean; branch: string; changes: git.GitChange[] };
+      "git:status": { isRepo: boolean; branch: string; changes: git.GitChange[]; rootPath: string };
       "git:diff": { filePath: string; diff: string };
       "git:log": { commits: git.GitCommit[] };
       "git:error": { message: string };
+      "folder:picked": { workspaceId: string; path: string; name: string; cancelled: boolean };
     };
   };
 };
@@ -71,6 +76,15 @@ const pendingResize = new Map<string, { cols: number; rows: number }>();
 
 // Store git root per workspace
 let currentGitRoot: string | null = null;
+
+// Store root path per workspace for auto-cd when terminal is created
+// Key is the workspace ID (without _t suffix)
+const workspaceRootPaths = new Map<string, string>();
+
+// Helper to extract base workspace ID from terminal ID (e.g., "uuid_t0" -> "uuid")
+function getBaseWorkspaceId(terminalId: string): string {
+  return terminalId.split('_t')[0];
+}
 
 function sendOrBuffer(workspaceId: string, b64: string): void {
   if (workspaceReady.get(workspaceId)) {
@@ -131,6 +145,16 @@ const rpc = BrowserView.defineRPC<AppSchema>({
           if (size) {
             resizePty(workspaceId, size.cols, size.rows);
           }
+          // Auto-cd to workspace root path if set
+          const baseId = getBaseWorkspaceId(workspaceId);
+          const rootPath = workspaceRootPaths.get(baseId);
+          if (rootPath) {
+            console.log(`[index.ts] Auto-cd for terminal ${workspaceId} (base: ${baseId}) to ${rootPath}`);
+            setTimeout(() => {
+              const b64 = Buffer.from(`cd "${rootPath}"` + "\n").toString("base64");
+              writeToTty(workspaceId, b64);
+            }, 500);
+          }
         }
         flushWorkspaceBuffer(workspaceId);
       },
@@ -147,6 +171,21 @@ const rpc = BrowserView.defineRPC<AppSchema>({
         // Encode command as PTY input (base64)
         const b64 = Buffer.from(command + "\n").toString("base64");
         writeToTty(workspaceId, b64);
+      },
+      "workspace:setRootPath": ({ workspaceId, path }) => {
+        console.log(`[index.ts] workspace:setRootPath received: ${workspaceId} -> ${path}`);
+        const baseId = getBaseWorkspaceId(workspaceId);
+        workspaceRootPaths.set(baseId, path);
+        // If any terminal for this workspace is already ready, cd to all of them
+        for (const [termId, isReady] of workspaceReady.entries()) {
+          if (isReady && getBaseWorkspaceId(termId) === baseId) {
+            console.log(`[index.ts] Terminal ${termId} already ready, executing cd to ${path}`);
+            setTimeout(() => {
+              const b64 = Buffer.from(`cd "${path}"` + "\n").toString("base64");
+              writeToTty(termId, b64);
+            }, 500);
+          }
+        }
       },
       "get-cwd": () => {
         const cwd = process.cwd();
@@ -166,6 +205,8 @@ const rpc = BrowserView.defineRPC<AppSchema>({
           git.getStatus(gitRoot),
           git.getLog(gitRoot, 50),
         ]);
+        // Send folder:picked with resolved absolute path
+        sendToWebview("folder:picked", { workspaceId: "", path: gitRoot, name: path, cancelled: false });
         sendToWebview("git:status", status);
         sendToWebview("git:log", { commits });
       },

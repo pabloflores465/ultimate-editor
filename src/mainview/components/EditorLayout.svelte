@@ -362,6 +362,7 @@
         "terminal:ready": { workspaceId: string };
         "terminal:destroy": { workspaceId: string };
         "run:execute": { command: string; workspaceId: string };
+        "workspace:setRootPath": { workspaceId: string; path: string };
       };
     };
     webview: {
@@ -373,6 +374,7 @@
         "menu:new-file": Record<string, never>;
         "menu:open-file": Record<string, never>;
         "menu:save-file": Record<string, never>;
+        "folder:picked": { workspaceId: string; path: string; name: string; cancelled: boolean };
       };
     };
   };
@@ -385,6 +387,8 @@
   // Separate map for write functions - more stable than storing in tree nodes
   let terminalWriteFns = new Map<string, (b64: string) => void>();
   console.log(`[EditorLayout] Created new terminalWriteFns Map`);
+
+
 
   // Track all terminal IDs derived directly from tiling tree
   let allTerminalIds = $derived(tiling.terminals.map(t => t.id));
@@ -425,11 +429,18 @@
         "menu:new-file":      () => { /* TODO */ },
         "menu:open-file":     (data: { path: string }) => { console.log("menu:open-file received, cwd:", data.path); },
         "menu:save-file":     () => { saveCurrentFile(); },
-        "git:status": (data: { isRepo: boolean; branch: string; changes: GitChange[] }) => {
+        "git:status": (data: { isRepo: boolean; branch: string; changes: GitChange[]; rootPath: string }) => {
           gitIsRepo = data.isRepo;
           gitBranch = data.branch;
           gitChanges = data.changes;
           gitLoading = false;
+          // Update store with absolute path from git backend
+          if (data.rootPath && (data.rootPath.startsWith('/') || /^[A-Za-z]:/.test(data.rootPath))) {
+            console.log(`[EditorLayout] Received rootPath from git: ${data.rootPath}`);
+            workspaceStore.setRootPath(ws.id, data.rootPath);
+            // Send to backend for auto-cd when terminal is created
+            termRpc.send["workspace:setRootPath"]({ workspaceId: ws.id, path: data.rootPath });
+          }
         },
         "git:diff": (data: { filePath: string; diff: string }) => {
           gitDiffs.set(data.filePath, data.diff);
@@ -441,6 +452,15 @@
         "git:error": (data: { message: string }) => {
           console.error("Git error:", data.message);
           gitLoading = false;
+        },
+        "folder:picked": (data: { workspaceId: string; path: string; name: string; cancelled: boolean }) => {
+          console.log(`[EditorLayout] folder:picked received: ${data.path}`);
+          if (!data.cancelled && data.path && (data.path.startsWith('/') || /^[A-Za-z]:/.test(data.path))) {
+            // Update store with absolute path
+            workspaceStore.setRootPath(ws.id, data.path);
+            // Send to backend for auto-cd when terminal is created
+            termRpc.send["workspace:setRootPath"]({ workspaceId: ws.id, path: data.path });
+          }
         },
       },
     },
@@ -475,6 +495,7 @@
     console.log(`[EditorLayout] handleTermMounted for ${termId}`);
     terminalWriteFns.set(termId, writeFn);
     termRpc.send["terminal:ready"]({ workspaceId: termId });
+
   }
   function handleSplit(termId: string, direction: "horizontal" | "vertical") {
     console.log(`[EditorLayout] handleSplit ${direction} for ${termId}`);
@@ -782,7 +803,20 @@
             onFileOpen={(path, name, icon, content) =>
               workspaceStore.openFile(ws.id, path, name, icon, content)
             }
-            onFolderOpen={(path) => gitOpenRepo(path)}
+            onFolderOpen={(path) => {
+              // Use the path from the store (which should be absolute after Sidebar update)
+              const storePath = ws.project?.rootPath;
+              const targetPath = storePath && (storePath.startsWith('/') || /^[A-Za-z]:/.test(storePath)) 
+                ? storePath 
+                : path;
+              
+              gitOpenRepo(targetPath);
+              // Send root path to backend for auto-cd when terminal is created
+              if (targetPath && (targetPath.startsWith('/') || /^[A-Za-z]:/.test(targetPath))) {
+                termRpc.send["workspace:setRootPath"]({ workspaceId: ws.id, path: targetPath });
+                console.log(`[EditorLayout] Sent workspace:setRootPath for ${ws.id}: ${targetPath}`);
+              }
+            }}
             workspaceId={ws.id}
             projectRootName={ws.project.rootName}
             projectFileNodes={ws.project.fileNodes}

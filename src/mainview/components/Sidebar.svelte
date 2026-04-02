@@ -29,6 +29,7 @@
   let fileInput = $state<HTMLInputElement | null>(null);
   let isDragOver = $state(false);
   const fileMap = new Map<string, File>();
+  let selectedDirHandle: FileSystemDirectoryHandle | null = null;
 
   function getFileIcon(name: string): string {
     const ext = name.split(".").pop()?.toLowerCase() ?? "";
@@ -127,13 +128,9 @@
     workspaceStore.updateProject(workspaceId, { rootName, fileNodes });
 
     const firstFile = files[0] as File & { path?: string };
-    let folderPath: string;
-    
-    if (firstFile.path) {
-      folderPath = firstFile.path.replace("/" + rootName, "");
-    } else {
-      folderPath = rootName;
-    }
+    // Since File API doesn't expose absolute paths, we pass the folder name
+    // and let the backend resolve it via git operations
+    const folderPath = rootName;
     
     workspaceStore.setRootPath(workspaceId, folderPath);
     onFolderOpen?.(folderPath);

@@ -87,12 +87,12 @@ export async function isRepo(path: string): Promise<boolean> {
   }
 }
 
-export async function getStatus(path: string): Promise<{ isRepo: boolean; branch: string; changes: GitChange[] }> {
+export async function getStatus(path: string): Promise<{ isRepo: boolean; branch: string; changes: GitChange[]; rootPath: string }> {
   const git = getGit(path);
   const isRepoResult = await git.checkIsRepo();
   
   if (!isRepoResult) {
-    return { isRepo: false, branch: "", changes: [] };
+    return { isRepo: false, branch: "", changes: [], rootPath: path };
   }
 
   const [status, branchResult] = await Promise.all([
@@ -135,6 +135,7 @@ export async function getStatus(path: string): Promise<{ isRepo: boolean; branch
     isRepo: true,
     branch: branchResult.current || "",
     changes,
+    rootPath: path,
   };
 }
 

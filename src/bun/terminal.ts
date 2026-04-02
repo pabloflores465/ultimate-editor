@@ -208,6 +208,7 @@ function spawnShell(workspaceId: string): void {
       KITTY_LISTEN_ON:        undefined,
     },
     detached: false,
+    cwd: homedir(), // Start in home directory, not app bundle
   });
 
   session.childProcess = child;
