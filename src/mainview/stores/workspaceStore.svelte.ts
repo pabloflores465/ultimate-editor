@@ -224,6 +224,8 @@ class WorkspaceStore {
   tiledFocus      = $state(0);
   /** Index of the workspace tab currently being dragged for tile-drop (null = not dragging) */
   tilingDragWsIdx = $state<number | null>(null);
+  /** Split ratio for 2-way splits (0–1, first tile gets this fraction). For quarter: [col, row]. */
+  tilingSplitRatio = $state<[number, number]>([0.5, 0.5]);
 
   setTilingLayout(layout: "single" | "vsplit" | "hsplit" | "quarter") {
     const count = layout === "quarter" ? 4 : layout === "single" ? 1 : 2;
@@ -233,6 +235,7 @@ class WorkspaceStore {
     }
     this.tilingLayout = layout;
     this.tiledIndices = Array.from({ length: count }, (_, i) => i);
+    this.tilingSplitRatio = [0.5, 0.5];
     if (this.tiledFocus >= count) this.tiledFocus = 0;
     this.activeIndex = this.tiledIndices[this.tiledFocus];
   }

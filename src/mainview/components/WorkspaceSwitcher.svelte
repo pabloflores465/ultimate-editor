@@ -33,6 +33,40 @@
 
   let { children }: { children: import("svelte").Snippet } = $props();
 
+  // ── Tiling resize state ─────────────────────────────────────
+  let tilingResizing = $state<"col" | "row" | null>(null);
+
+  function onTilingResizeStart(axis: "col" | "row", e: MouseEvent) {
+    e.preventDefault();
+    tilingResizing = axis;
+  }
+
+  onMount(() => {
+    function onTilingResizeMove(e: MouseEvent) {
+      if (!tilingResizing) return;
+      const container = document.querySelector(".ws-tiled") as HTMLElement | null;
+      if (!container) return;
+      const rect = container.getBoundingClientRect();
+      const [ratioCol, ratioRow] = workspaceStore.tilingSplitRatio;
+      if (tilingResizing === "col") {
+        const r = Math.max(0.15, Math.min(0.85, (e.clientX - rect.left) / rect.width));
+        workspaceStore.tilingSplitRatio = [r, ratioRow];
+      } else {
+        const r = Math.max(0.15, Math.min(0.85, (e.clientY - rect.top) / rect.height));
+        workspaceStore.tilingSplitRatio = [ratioCol, r];
+      }
+    }
+    function onTilingResizeEnd() {
+      tilingResizing = null;
+    }
+    window.addEventListener("mousemove", onTilingResizeMove);
+    window.addEventListener("mouseup", onTilingResizeEnd);
+    return () => {
+      window.removeEventListener("mousemove", onTilingResizeMove);
+      window.removeEventListener("mouseup", onTilingResizeEnd);
+    };
+  });
+
   // ── Tiling drop-zone state ─────────────────────────────────
   let dropZoneHover = $state<"left" | "right" | "top" | "bottom" | null>(null);
 
@@ -440,19 +474,31 @@
 
 {#if workspaceStore.tilingLayout !== "single"}
   <!-- ── Tiled workspace view ──────────────────────────────── -->
+  {@const layout = workspaceStore.tilingLayout}
+  {@const [ratioCol, ratioRow] = workspaceStore.tilingSplitRatio}
   <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
   <div
     class="ws-tiled"
-    style:display={workspaceStore.tilingLayout === "quarter" ? "grid" : "flex"}
-    style:grid-template-columns={workspaceStore.tilingLayout === "quarter" ? "1fr 1fr" : undefined}
-    style:grid-template-rows={workspaceStore.tilingLayout === "quarter" ? "1fr 1fr" : undefined}
-    style:flex-direction={workspaceStore.tilingLayout === "hsplit" ? "column" : "row"}
+    style:display={layout === "quarter" ? "grid" : "flex"}
+    style:grid-template-columns={layout === "quarter" ? `${ratioCol}fr ${1 - ratioCol}fr` : undefined}
+    style:grid-template-rows={layout === "quarter" ? `${ratioRow}fr ${1 - ratioRow}fr` : undefined}
+    style:flex-direction={layout === "hsplit" ? "column" : "row"}
+    style:cursor={tilingResizing === "col" ? "col-resize" : tilingResizing === "row" ? "row-resize" : undefined}
   >
     {#each workspaceStore.tiledIndices as wsIdx, tileIdx}
       {@const tileWs = workspaceStore.workspaces[wsIdx]}
+      {#if tileIdx === 1 && (layout === "vsplit" || layout === "hsplit")}
+        <!-- svelte-ignore a11y_no_static_element_interactions -->
+        <div
+          class="ws-tile-divider {layout === 'vsplit' ? 'ws-tile-divider--col' : 'ws-tile-divider--row'}"
+          role="separator"
+          onmousedown={(e) => onTilingResizeStart(layout === "vsplit" ? "col" : "row", e)}
+        ></div>
+      {/if}
       <div
         class="ws-tile"
         class:ws-tile--focused={workspaceStore.tiledFocus === tileIdx}
+        style:flex={layout !== "quarter" ? (tileIdx === 0 ? `${layout === "vsplit" ? ratioCol : ratioRow} 1 0%` : `${layout === "vsplit" ? 1 - ratioCol : 1 - ratioRow} 1 0%`) : undefined}
         role="button"
         tabindex="0"
         onclick={() => workspaceStore.focusTile(tileIdx)}
@@ -467,6 +513,23 @@
         </EditorLayout>
       </div>
     {/each}
+    {#if layout === "quarter"}
+      <!-- Overlay dividers for quarter layout -->
+      <!-- svelte-ignore a11y_no_static_element_interactions -->
+      <div
+        class="ws-tile-divider ws-tile-divider--col"
+        role="separator"
+        style="position:absolute; top:0; bottom:0; left:{ratioCol * 100}%; transform:translateX(-50%); z-index:3;"
+        onmousedown={(e) => onTilingResizeStart("col", e)}
+      ></div>
+      <!-- svelte-ignore a11y_no_static_element_interactions -->
+      <div
+        class="ws-tile-divider ws-tile-divider--row"
+        role="separator"
+        style="position:absolute; left:0; right:0; top:{ratioRow * 100}%; transform:translateY(-50%); z-index:3;"
+        onmousedown={(e) => onTilingResizeStart("row", e)}
+      ></div>
+    {/if}
   </div>
 
 {:else}

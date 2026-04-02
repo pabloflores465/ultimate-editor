@@ -397,8 +397,8 @@ html, body {
   flex: 1;
   min-height: 0;
   overflow: hidden;
-  background: #555759; /* border color bleeds through the gap */
-  gap: 1px;
+  position: relative;
+  background: #1e1f22;
 }
 
 .ws-tile {
@@ -417,6 +417,30 @@ html, body {
   box-shadow: inset 0 0 0 2px #4e9ede;
   z-index: 1;
 }
+
+/* ── Tiling resize dividers ───────────────────────────────── */
+.ws-tile-divider {
+  flex-shrink: 0;
+  background: #555759;
+  z-index: 2;
+  transition: background 120ms ease;
+}
+
+.ws-tile-divider:hover,
+.ws-tile-divider:active {
+  background: #4e9ede;
+}
+
+.ws-tile-divider--col {
+  width: 4px;
+  cursor: col-resize;
+}
+
+.ws-tile-divider--row {
+  height: 4px;
+  cursor: row-resize;
+}
+
 
 /* Workspace indicator pill in toolbar */
 .ws-indicator {
