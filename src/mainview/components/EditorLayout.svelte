@@ -32,6 +32,85 @@
   // mode is stored globally so WorkspaceTabBar can also toggle it
   const mode = $derived(workspaceStore.mode);
 
+  // ── Menu dropdown state ─────────────────────────────────────
+  type MenuId = "File" | "Edit" | "View" | "Navigate" | "Code" | "Refactor" | "Build" | "Run" | "Tools" | "Git" | "Window" | "Help" | null;
+  let activeMenu = $state<MenuId>(null);
+
+  const menuItems: Record<MenuId, { label: string; shortcut?: string }[]> = {
+    File: [
+      { label: "New File", shortcut: "⌘N" },
+      { label: "Open File…", shortcut: "⌘O" },
+      { label: "Open Folder…", shortcut: "⌘⇧O" },
+      { label: "Save", shortcut: "⌘S" },
+      { label: "Save As…", shortcut: "⌘⇧S" },
+    ],
+    Edit: [
+      { label: "Undo", shortcut: "⌘Z" },
+      { label: "Redo", shortcut: "⌘⇧Z" },
+      { label: "Cut", shortcut: "⌘X" },
+      { label: "Copy", shortcut: "⌘C" },
+      { label: "Paste", shortcut: "⌘V" },
+    ],
+    View: [
+      { label: "Toggle Sidebar", shortcut: "⌘B" },
+      { label: "Toggle Bottom Panel", shortcut: "⌘J" },
+      { label: "Toggle Full Screen", shortcut: "⌃⌘F" },
+    ],
+    Navigate: [
+      { label: "Go to File…", shortcut: "⌘⇧N" },
+      { label: "Go to Symbol…", shortcut: "⌘⌥O" },
+      { label: "Recent Files", shortcut: "⌘E" },
+    ],
+    Code: [
+      { label: "Format Document", shortcut: "⌘⇧I" },
+      { label: "Organize Imports", shortcut: "⌘⇧O" },
+    ],
+    Refactor: [
+      { label: "Rename", shortcut: "⌘F6" },
+      { label: "Extract to Method" },
+    ],
+    Build: [
+      { label: "Build Project", shortcut: "⌘F9" },
+      { label: "Rebuild Project" },
+    ],
+    Run: [
+      { label: "Run", shortcut: "⌘R" },
+      { label: "Debug", shortcut: "⌘D" },
+      { label: "Stop", shortcut: "⌘F2" },
+    ],
+    Tools: [
+      { label: "Command Palette…", shortcut: "⌘⇧P" },
+      { label: "Terminal", shortcut: "⌥F12" },
+    ],
+    Git: [
+      { label: "Commit…", shortcut: "⌘K" },
+      { label: "Push…", shortcut: "⌘⇧K" },
+      { label: "Pull…" },
+    ],
+    Window: [
+      { label: "Close Tab", shortcut: "⌘W" },
+      { label: "Split Right" },
+      { label: "Split Down" },
+    ],
+    Help: [
+      { label: "Documentation", shortcut: "⌘/" },
+      { label: "About" },
+    ],
+  };
+
+  function openMenu(menu: MenuId) {
+    activeMenu = activeMenu === menu ? null : menu;
+  }
+
+  function closeMenu() {
+    activeMenu = null;
+  }
+
+  function handleMenuItemClick(item: string) {
+    console.log(`Menu item clicked: ${item}`);
+    closeMenu();
+  }
+
   // ── Agent mode state ──────────────────────────────────────────
   interface AgentMessage {
     id: string;
@@ -324,28 +403,34 @@
        can still be moved by dragging from this area. -->
   <header class="titlebar electrobun-webkit-app-region-drag flex items-center h-[26px] bg-jb-panel flex-shrink-0 border-b border-jb-border">
 
-    <div bind:this={navWrapEl} class="no-drag electrobun-webkit-app-region-no-drag flex items-center flex-1 min-w-0 overflow-hidden pl-1 relative">
+    <div bind:this={navWrapEl} class="no-drag electrobun-webkit-app-region-no-drag flex items-center flex-1 min-w-0 overflow-visible pl-1 relative">
 
-      {#if navOverflows}
-        <button
-          onclick={() => hamburgerOpen = !hamburgerOpen}
-          class="flex flex-col justify-center items-center w-[22px] h-[22px] gap-[4px] rounded hover:bg-jb-hover flex-shrink-0"
-          title="Menu"
-        >
-          <span class="block w-[13px] h-[1.5px] bg-jb-muted rounded"></span>
-          <span class="block w-[13px] h-[1.5px] bg-jb-muted rounded"></span>
-          <span class="block w-[13px] h-[1.5px] bg-jb-muted rounded"></span>
-        </button>
-        {#if hamburgerOpen}
-          <button class="fixed inset-0 z-40 cursor-default border-none bg-transparent p-0" onclick={() => hamburgerOpen = false} aria-label="Close menu"></button>
-          <div class="absolute top-full left-0 mt-px bg-jb-panel border border-jb-border rounded shadow-lg z-50 py-1 min-w-[160px]">
-            {#each ["File","Edit","View","Navigate","Code","Refactor","Build","Run","Tools","Git","Window","Help"] as m}
-              <span class="block px-4 py-1.5 text-[12px] text-jb-text cursor-pointer hover:bg-jb-select whitespace-nowrap">
-                {m}
-              </span>
-            {/each}
-          </div>
-        {/if}
+      <!-- Hamburger menu - always visible -->
+      <button
+        onclick={() => hamburgerOpen = !hamburgerOpen}
+        class="flex flex-col justify-center items-center w-[22px] h-[22px] gap-[4px] rounded hover:bg-jb-hover flex-shrink-0 mr-1 z-50 relative"
+        title="Menu"
+      >
+        <span class="block w-[13px] h-[1.5px] bg-jb-muted rounded"></span>
+        <span class="block w-[13px] h-[1.5px] bg-jb-muted rounded"></span>
+        <span class="block w-[13px] h-[1.5px] bg-jb-muted rounded"></span>
+      </button>
+      {#if hamburgerOpen}
+        <button class="fixed inset-0 z-40 cursor-default border-none bg-transparent p-0" onclick={() => hamburgerOpen = false} aria-label="Close menu"></button>
+        <div class="absolute top-full left-0 mt-px bg-jb-panel border border-jb-border rounded shadow-lg z-50 py-1 min-w-[200px]">
+          {#each ["File","Edit","View","Navigate","Code","Refactor","Build","Run","Tools","Git","Window","Help"] as menuId}
+            {@const items = menuItems[menuId as keyof typeof menuItems]}
+            {#if items?.length}
+              <button
+                class="w-full flex items-center justify-between px-3 py-1.5 text-[12px] text-jb-text hover:bg-jb-select cursor-pointer border-none bg-transparent text-left"
+                onclick={() => { handleMenuItemClick(menuId); hamburgerOpen = false; }}
+              >
+                <span>{menuId}</span>
+                <span class="text-jb-muted text-[11px] ml-4">▶</span>
+              </button>
+            {/if}
+          {/each}
+        </div>
       {/if}
 
       <nav
@@ -355,12 +440,48 @@
         style:position={navOverflows ? "absolute" : "static"}
         style:pointer-events={navOverflows ? "none" : "auto"}
       >
-        {#each ["File","Edit","View","Navigate","Code","Refactor","Build","Run","Tools","Git","Window","Help"] as m}
-          <span class="px-2 py-0.5 text-[12px] text-jb-text cursor-pointer rounded hover:bg-jb-hover whitespace-nowrap">
-            {m}
-          </span>
+        {#each ["File","Edit","View","Navigate","Code","Refactor","Build","Run","Tools","Git","Window","Help"] as menuId}
+          {@const items = menuItems[menuId as keyof typeof menuItems]}
+          <div class="relative">
+            <button
+              class="px-2 py-0.5 text-[12px] rounded whitespace-nowrap border-none bg-transparent cursor-pointer
+                {activeMenu === menuId ? 'bg-jb-select text-jb-text' : 'text-jb-text hover:bg-jb-hover'}"
+              onclick={(e) => { e.stopPropagation(); openMenu(menuId as MenuId); }}
+              onmouseenter={() => activeMenu && (activeMenu = menuId as MenuId)}
+            >
+              {menuId}
+            </button>
+            {#if activeMenu === menuId}
+              <!-- svelte-ignore a11y_click_events_have_key_events -->
+              <!-- svelte-ignore a11y_no_static_element_interactions -->
+              <div
+                class="absolute top-full left-0 mt-px bg-jb-panel border border-jb-border rounded shadow-lg z-50 py-1 min-w-[200px]"
+                onclick={(e) => e.stopPropagation()}
+                onmouseenter={() => {}}
+                onmouseleave={() => closeMenu()}
+              >
+                {#each items as item}
+                  <button
+                    class="w-full flex items-center justify-between px-3 py-1.5 text-[12px] text-jb-text hover:bg-jb-select cursor-pointer border-none bg-transparent text-left"
+                    onclick={() => handleMenuItemClick(item.label)}
+                  >
+                    <span>{item.label}</span>
+                    {#if item.shortcut}
+                      <span class="text-jb-muted text-[11px] ml-4">{item.shortcut}</span>
+                    {/if}
+                  </button>
+                {/each}
+              </div>
+            {/if}
+          </div>
         {/each}
       </nav>
+      <!-- Click outside to close menu -->
+      {#if activeMenu}
+        <!-- svelte-ignore a11y_click_events_have_key_events -->
+        <!-- svelte-ignore a11y_no_static_element_interactions -->
+        <div class="fixed inset-0 z-30" onclick={() => closeMenu()} onkeydown={() => {}}></div>
+      {/if}
 
     </div>
 
