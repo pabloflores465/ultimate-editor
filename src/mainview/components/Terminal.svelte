@@ -77,12 +77,27 @@
 
     // Forward user input to backend as base64
     const enc = new TextEncoder();
+    // Pure JS base64 encoder that handles all byte values correctly
+    function encodeBase64(bytes: Uint8Array): string {
+      const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+      let result = '';
+      let i = 0;
+      while (i < bytes.length) {
+        const b1 = bytes[i++];
+        const b2 = i < bytes.length ? bytes[i++] : undefined;
+        const b3 = i < bytes.length ? bytes[i++] : undefined;
+        const e1 = b1 >> 2;
+        const e2 = ((b1 & 0x03) << 4) | (b2 !== undefined ? (b2 >> 4) : 0);
+        const e3 = b2 !== undefined ? ((b2 & 0x0f) << 2) | (b3 !== undefined ? (b3 >> 6) : 0) : 64;
+        const e4 = b3 !== undefined ? (b3 & 0x3f) : 64;
+        result += chars[e1] + chars[e2] + (e3 === 64 ? '=' : chars[e3]) + (e4 === 64 ? '=' : chars[e4]);
+      }
+      return result;
+    }
     term.onData((data: string) => {
       if (!mounted) return;
       const bytes = enc.encode(data);
-      let bin = "";
-      for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
-      onInput(btoa(bin));
+      onInput(encodeBase64(bytes));
     });
 
     // Debounced ResizeObserver — handles all subsequent size changes

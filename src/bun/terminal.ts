@@ -318,7 +318,6 @@ export function createTerminalForWorkspace(
 /** Escribe bytes de entrada del usuario (base64) al PTY master de un workspace. */
 export function writeToTty(workspaceId: string, b64: string): void {
   const session = sessions.get(workspaceId);
-  console.log(`[terminal.ts] writeToTty for ${workspaceId}, session exists: ${!!session}, shellSpawned: ${session?.shellSpawned}, destroyed: ${session?.destroyed}`);
   if (!session || session.masterFd < 0 || !session.shellSpawned || session.destroyed) return;
   try {
     writeSync(session.masterFd, Buffer.from(b64, "base64"));

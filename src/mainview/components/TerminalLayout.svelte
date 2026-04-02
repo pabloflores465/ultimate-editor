@@ -194,7 +194,7 @@
         role="button"
         tabindex="-1"
         onclick={() => onActivate(termId)}
-        onkeydown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onActivate(termId); } }}
+        onkeydown={(e) => { if (e.key === "Enter") { e.preventDefault(); onActivate(termId); } }}
       >
         {@render children(termId)}
       </div>
