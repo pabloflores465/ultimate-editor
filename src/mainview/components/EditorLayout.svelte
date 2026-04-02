@@ -393,9 +393,9 @@
   let bottomMaximized = $state(false);
   let termFullscreen  = $state(false);
 
-  // Initialize terminal when panel opens
+  // Initialize terminal when panel opens (only if project is open)
   $effect(() => {
-    if (ws.bottomPanelOpen && ws.activeBottom === "terminal" && !tiling.root) {
+    if (hasProject && ws.bottomPanelOpen && ws.activeBottom === "terminal" && !tiling.root) {
       const id = tiling.init(ws.id);
       console.log(`[EditorLayout] Initialized tiling with terminal ${id}`);
     }
@@ -1270,15 +1270,17 @@
                   <div class="flex items-center ml-auto flex-shrink-0 gap-0">
                     <!-- New terminal -->
                     <button
-                      title="New terminal"
+                      title={hasProject ? "New terminal" : "Open a project to use the terminal"}
+                      disabled={!hasProject}
                       onclick={() => { if (tiling.activeTerminal) handleSplit(tiling.activeTerminal.id, "vertical"); }}
-                      class="w-6 h-6 flex items-center justify-center rounded text-jb-muted hover:bg-jb-hover hover:text-jb-text bg-transparent border-none cursor-pointer text-[13px]"
+                      class="w-6 h-6 flex items-center justify-center rounded text-jb-muted hover:bg-jb-hover hover:text-jb-text bg-transparent border-none cursor-pointer text-[13px] disabled:opacity-40 disabled:cursor-not-allowed"
                     >＋</button>
                     <!-- Split vertical -->
                     <button
-                      title="Split vertically"
+                      title={hasProject ? "Split vertically" : "Open a project to use the terminal"}
+                      disabled={!hasProject}
                       onclick={() => { if (tiling.activeTerminal) handleSplit(tiling.activeTerminal.id, "vertical"); }}
-                      class="w-6 h-6 flex items-center justify-center rounded text-jb-muted hover:bg-jb-hover hover:text-jb-text bg-transparent border-none cursor-pointer"
+                      class="w-6 h-6 flex items-center justify-center rounded text-jb-muted hover:bg-jb-hover hover:text-jb-text bg-transparent border-none cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
                     >
                       <svg viewBox="0 0 14 14" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.2">
                         <rect x="1" y="1" width="12" height="12" rx="1"/><line x1="7" y1="1" x2="7" y2="13"/>
@@ -1286,9 +1288,10 @@
                     </button>
                     <!-- Split horizontal -->
                     <button
-                      title="Split horizontally"
+                      title={hasProject ? "Split horizontally" : "Open a project to use the terminal"}
+                      disabled={!hasProject}
                       onclick={() => { if (tiling.activeTerminal) handleSplit(tiling.activeTerminal.id, "horizontal"); }}
-                      class="w-6 h-6 flex items-center justify-center rounded text-jb-muted hover:bg-jb-hover hover:text-jb-text bg-transparent border-none cursor-pointer"
+                      class="w-6 h-6 flex items-center justify-center rounded text-jb-muted hover:bg-jb-hover hover:text-jb-text bg-transparent border-none cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
                     >
                       <svg viewBox="0 0 14 14" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.2">
                         <rect x="1" y="1" width="12" height="12" rx="1"/><line x1="1" y1="7" x2="13" y2="7"/>
@@ -1297,15 +1300,25 @@
                     <!-- Fullscreen -->
                     <button
                       title={termFullscreen ? "Exit fullscreen" : "Fullscreen"}
+                      disabled={!hasProject}
                       onclick={() => (termFullscreen = !termFullscreen)}
-                      class="w-6 h-6 flex items-center justify-center rounded text-jb-muted hover:bg-jb-hover hover:text-jb-text bg-transparent border-none cursor-pointer text-[11px]"
+                      class="w-6 h-6 flex items-center justify-center rounded text-jb-muted hover:bg-jb-hover hover:text-jb-text bg-transparent border-none cursor-pointer text-[11px] disabled:opacity-40 disabled:cursor-not-allowed"
                     >{termFullscreen ? "⊡" : "⤢"}</button>
                   </div>
                 </div>
 
                 <!-- ── Tiling pane area ── -->
                 <div class="flex-1 min-h-0 overflow-hidden relative">
-                  {#if tiling.root}
+                  {#if !hasProject}
+                    <div class="flex-1 flex flex-col items-center justify-center h-full text-jb-muted gap-3">
+                      <svg viewBox="0 0 24 24" width="32" height="32" fill="none" stroke="currentColor" stroke-width="1.5" opacity="0.4">
+                        <rect x="4" y="4" width="16" height="16" rx="2"/>
+                        <path d="M4 8h16"/>
+                        <path d="M8 4v4"/>
+                      </svg>
+                      <span class="text-[13px]">Please open a project to start using the terminal</span>
+                    </div>
+                  {:else if tiling.root}
                     <TerminalLayout
                       node={tiling.root}
                       terminalIds={allTerminalIds}
