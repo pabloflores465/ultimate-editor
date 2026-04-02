@@ -541,16 +541,18 @@
 
     <div bind:this={navWrapEl} class="no-drag electrobun-webkit-app-region-no-drag flex items-center flex-1 min-w-0 overflow-visible pl-1 relative">
 
-      <!-- Hamburger menu - always visible -->
-      <button
-        onclick={() => hamburgerOpen = !hamburgerOpen}
-        class="flex flex-col justify-center items-center w-[22px] h-[22px] gap-[4px] rounded hover:bg-jb-hover flex-shrink-0 mr-1 z-50 relative"
-        title="Menu"
-      >
-        <span class="block w-[13px] h-[1.5px] bg-jb-muted rounded"></span>
-        <span class="block w-[13px] h-[1.5px] bg-jb-muted rounded"></span>
-        <span class="block w-[13px] h-[1.5px] bg-jb-muted rounded"></span>
-      </button>
+      <!-- Hamburger menu - hidden when menu is fully visible -->
+      {#if navOverflows && !hamburgerOpen}
+        <button
+          onclick={() => hamburgerOpen = true}
+          class="flex flex-col justify-center items-center w-[22px] h-[22px] gap-[4px] rounded hover:bg-jb-hover flex-shrink-0 mr-1 z-50 relative"
+          title="Menu"
+        >
+          <span class="block w-[13px] h-[1.5px] bg-jb-muted rounded"></span>
+          <span class="block w-[13px] h-[1.5px] bg-jb-muted rounded"></span>
+          <span class="block w-[13px] h-[1.5px] bg-jb-muted rounded"></span>
+        </button>
+      {/if}
       {#if hamburgerOpen}
         <button class="fixed inset-0 z-40 cursor-default border-none bg-transparent p-0" onclick={() => hamburgerOpen = false} aria-label="Close menu"></button>
         <div class="absolute top-full left-0 mt-px bg-jb-panel border border-jb-border rounded shadow-lg z-50 py-1 min-w-[200px]">
