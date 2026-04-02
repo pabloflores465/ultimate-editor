@@ -196,8 +196,8 @@
     scrollbar-width: thin;
   }
   :global(.terminal-host .xterm-viewport::-webkit-scrollbar) {
-    width: 8px;
-    height: 8px;
+    width: 6px;
+    height: 6px;
   }
   :global(.terminal-host .xterm-viewport::-webkit-scrollbar-track) {
     background: #1e1f22;

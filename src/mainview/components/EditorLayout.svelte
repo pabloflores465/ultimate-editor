@@ -1369,7 +1369,7 @@
                           />
                           {#if tiling.count > 1}
                             <button
-                              class="group/closebtn absolute top-1.5 right-1.5 z-10 w-[18px] h-[18px] flex items-center justify-center rounded-full bg-[#3c3f41] hover:bg-[#4c5052] opacity-0 group-hover/pane:opacity-100 transition-opacity cursor-pointer border-none"
+                              class="group/closebtn absolute top-1.5 right-3 z-50 w-[18px] h-[18px] flex items-center justify-center rounded-full bg-[#3c3f41] hover:bg-[#4c5052] opacity-0 group-hover/pane:opacity-100 transition-opacity cursor-pointer border-none pointer-events-auto shadow-sm"
                               title="Close terminal"
                               onclick={(e) => { e.stopPropagation(); handleCloseTerm(termId); }}
                             >
