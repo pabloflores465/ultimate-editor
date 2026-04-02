@@ -63,13 +63,13 @@
   }
 </script>
 
-<div class="tab-bar">
+<div class="tab-bar electrobun-webkit-app-region-drag">
   <!-- macOS traffic-light spacer: -webkit-app-region:drag fills this area,
        the OS overlays the close/minimise/maximise buttons here. -->
   <div class="traffic-light-spacer"></div>
 
   <button
-    class="tab-add"
+    class="tab-add electrobun-webkit-app-region-no-drag"
     onclick={() => workspaceStore.addWorkspace()}
     title="New workspace (Ctrl+Alt+N)"
     aria-label="Add workspace"
@@ -79,7 +79,7 @@
     {#each workspaceStore.workspaces as ws, i (ws.id)}
       <!-- svelte-ignore a11y_no_static_element_interactions -->
       <div
-        class="tab"
+        class="tab electrobun-webkit-app-region-no-drag"
         class:tab--active={i === workspaceStore.activeIndex}
         class:tab--drag-over={dragOverIdx === i && dragIdx !== i}
         class:tab--dragging={dragIdx === i}
@@ -124,7 +124,7 @@
   </div>
 
   <!-- Tiling layout buttons -->
-  <div class="tiling-btns">
+  <div class="tiling-btns electrobun-webkit-app-region-no-drag">
     <button
       class="tiling-btn"
       class:tiling-btn--active={workspaceStore.tilingLayout === 'single'}
@@ -174,7 +174,7 @@
 
   <!-- Workspace overview button -->
   <button
-    class="tab-ws"
+    class="tab-ws electrobun-webkit-app-region-no-drag"
     onclick={() => workspaceStore.toggleOverview()}
     title="Workspace Overview (Ctrl+Shift+`)"
     aria-label="Workspace overview"

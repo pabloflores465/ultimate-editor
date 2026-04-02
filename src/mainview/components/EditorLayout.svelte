@@ -322,9 +322,9 @@
   <!-- With CSD (hiddenInset), the workspace tab bar IS the title bar.
        This is just the menu bar row, kept draggable so the window
        can still be moved by dragging from this area. -->
-  <header class="titlebar flex items-center h-[26px] bg-jb-panel flex-shrink-0 border-b border-jb-border">
+  <header class="titlebar electrobun-webkit-app-region-drag flex items-center h-[26px] bg-jb-panel flex-shrink-0 border-b border-jb-border">
 
-    <div bind:this={navWrapEl} class="no-drag flex items-center flex-1 min-w-0 overflow-hidden pl-1 relative">
+    <div bind:this={navWrapEl} class="no-drag electrobun-webkit-app-region-no-drag flex items-center flex-1 min-w-0 overflow-hidden pl-1 relative">
 
       {#if navOverflows}
         <button
