@@ -9,6 +9,7 @@
     activeTabPath = "",
     onClose,
     onFileOpen,
+    onFolderOpen,
     workspaceId,
     projectRootName,
     projectFileNodes,
@@ -19,6 +20,7 @@
     activeTabPath?: string;
     onClose: () => void;
     onFileOpen?: (path: string, name: string, icon: string, content: string) => void;
+    onFolderOpen?: (path: string) => void;
     workspaceId: string;
     projectRootName: string;
     projectFileNodes: FileNode[];
@@ -124,6 +126,18 @@
     
     workspaceStore.updateProject(workspaceId, { rootName, fileNodes });
 
+    const firstFile = files[0] as File & { path?: string };
+    let folderPath: string;
+    
+    if (firstFile.path) {
+      folderPath = firstFile.path.replace("/" + rootName, "");
+    } else {
+      folderPath = rootName;
+    }
+    
+    workspaceStore.setRootPath(workspaceId, folderPath);
+    onFolderOpen?.(folderPath);
+
     input.value = "";
   }
 
@@ -141,6 +155,8 @@
           rootName: entry.name, 
           fileNodes: [] 
         });
+        workspaceStore.setRootPath(workspaceId, entry.name);
+        onFolderOpen?.(entry.name);
         break;
       }
     }
@@ -157,102 +173,89 @@
     </span>
 
     <!-- Actions -->
-    <div class="flex items-center gap-0.5 flex-shrink-0">
-      <!-- Open folder button -->
+    <div class="flex items-center gap-0.5">
       <button
-        title="Open Folder…"
-        onclick={openFolderDialog}
-        class="w-5 h-5 flex items-center justify-center rounded text-jb-muted hover:bg-jb-hover hover:text-jb-text bg-transparent border-none cursor-pointer"
-      >
-        <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.4">
-          <path d="M2 4.5h4.5l1.5 2H14v7H2z" stroke-linejoin="round"/>
-          <path d="M2 4.5V3a1 1 0 0 1 1-1h2.5l1.5 1.5" stroke-linecap="round" stroke-linejoin="round"/>
-        </svg>
-      </button>
-
-      <!-- Expand All (placeholder) -->
-      <button
-        title="Expand All"
+        title="New File"
         class="w-5 h-5 flex items-center justify-center rounded text-jb-muted hover:bg-jb-hover hover:text-jb-text bg-transparent border-none cursor-pointer text-[11px]"
-      >⊞</button>
-
-      <!-- Collapse All (placeholder) -->
+      >+</button>
+      <button
+        title="Open Folder"
+        onclick={openFolderDialog}
+        class="w-5 h-5 flex items-center justify-center rounded text-jb-muted hover:bg-jb-hover hover:text-jb-text bg-transparent border-none cursor-pointer text-[11px]"
+      >📂</button>
       <button
         title="Collapse All"
         class="w-5 h-5 flex items-center justify-center rounded text-jb-muted hover:bg-jb-hover hover:text-jb-text bg-transparent border-none cursor-pointer text-[11px]"
       >⊟</button>
-
-      <!-- Close panel -->
       <button
-        title="Hide"
+        title="Close"
         onclick={onClose}
         class="w-5 h-5 flex items-center justify-center rounded text-jb-muted hover:bg-jb-hover hover:text-jb-text bg-transparent border-none cursor-pointer text-[11px]"
       >✕</button>
     </div>
   </div>
 
-  <!-- ── Body ──────────────────────────────────────────────────── -->
-  <div
-    class="flex-1 overflow-y-auto overflow-x-hidden min-h-0 py-1 relative transition-colors duration-150
-      {isDragOver ? 'bg-jb-hover/30 outline outline-1 outline-jb-blue outline-offset-[-2px]' : ''}"
-    ondragover={(e) => { e.preventDefault(); isDragOver = true; }}
-    ondragleave={() => { isDragOver = false; }}
-    ondrop={handleDrop}
-    role="region"
-    aria-label="File explorer"
-  >
+  <!-- ── Hidden file input ───────────────────────────────────────── -->
+  <input
+    type="file"
+    bind:this={fileInput}
+    webkitdirectory
+    directory
+    multiple
+    accept="*"
+    class="hidden"
+    onchange={handleFolderSelect}
+  />
+
+  <!-- ── Project Tree or Empty State ─────────────────────────────── -->
+  <div class="flex-1 min-h-0 overflow-hidden relative">
     {#if projectFileNodes.length === 0}
       <!-- Empty state -->
-      <div class="absolute inset-0 flex flex-col items-center justify-center gap-3 text-jb-muted pointer-events-none">
-        <svg viewBox="0 0 24 24" width="36" height="36" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="opacity-40">
-          <path d="M3 7h5l2 3h11v10H3z"/>
+      <div
+        class="flex flex-col items-center justify-center h-full gap-4 p-4"
+        ondragover={(e) => { e.preventDefault(); isDragOver = true; }}
+        ondragleave={() => { isDragOver = false; }}
+        ondrop={handleDrop}
+      >
+        <svg viewBox="0 0 24 24" width="48" height="48" fill="none" stroke="currentColor" stroke-width="1" class="text-jb-muted opacity-40">
+          <path d="M3 7v13a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"/>
         </svg>
-        <p class="text-[12px] opacity-60">No folder open</p>
-        <button
-          onclick={openFolderDialog}
-          class="pointer-events-auto px-3 py-1.5 text-[11px] bg-jb-panel2 border border-jb-border rounded hover:bg-jb-hover text-jb-text cursor-pointer transition-colors"
-        >
-          Open Folder…
-        </button>
-        <p class="text-[10px] opacity-40 mt-1">or drop a folder here</p>
+        <div class="flex flex-col items-center gap-2">
+          <span class="text-[12px] text-jb-muted">No project open</span>
+          <button
+            onclick={openFolderDialog}
+            class="px-3 py-1.5 text-[11px] bg-jb-panel2 border border-jb-border rounded hover:bg-jb-hover text-jb-text cursor-pointer transition-colors"
+          >
+            Open Folder
+          </button>
+        </div>
       </div>
     {:else}
-      <!-- Root label -->
-      <div class="flex items-center gap-1 px-2 py-0.5 cursor-pointer hover:bg-jb-hover">
-        <svg viewBox="0 0 12 12" width="12" height="12" fill="#4e9ede" opacity="0.7" class="flex-shrink-0">
-          <rect x="0.5" y="1.5" width="11" height="9" rx="1"/>
-          <rect x="0.5" y="1.5" width="5" height="3" rx="1" fill="#6aaddc"/>
-        </svg>
-        <span class="text-[12px] font-semibold text-jb-text truncate flex-1">{projectRootName}</span>
-        <!-- Re-open button inline -->
-        <button
-          title="Change folder…"
-          onclick={openFolderDialog}
-          class="opacity-0 hover:!opacity-100 group-hover:opacity-60 w-4 h-4 flex items-center justify-center rounded text-jb-muted hover:text-jb-text bg-transparent border-none cursor-pointer flex-shrink-0 text-[10px]"
-        >⟳</button>
-      </div>
-
       <!-- File tree -->
-      <FileTree
-        nodes={projectFileNodes}
-        {expandedFolders}
-        {onToggleFolder}
-        {activeRoute}
-        {activeTabPath}
-        onFileOpen={handleFileOpen}
-      />
+      <div class="h-full overflow-y-auto overflow-x-hidden">
+        <div class="py-1">
+          <FileTree
+            nodes={projectFileNodes}
+            expandedFolders={expandedFolders}
+            onToggleFolder={onToggleFolder}
+            onFileClick={handleFileOpen}
+            activeTabPath={activeTabPath}
+          />
+        </div>
+      </div>
+    {/if}
+
+    <!-- Drag overlay -->
+    {#if isDragOver}
+      <div
+        class="absolute inset-0 bg-jb-blue/10 border-2 border-dashed border-jb-blue rounded flex items-center justify-center pointer-events-none"
+        ondragover={(e) => { e.preventDefault(); isDragOver = true; }}
+        ondragleave={() => { isDragOver = false; }}
+        ondrop={handleDrop}
+      >
+        <span class="text-jb-blue text-[12px] font-medium">Drop folder here</span>
+      </div>
     {/if}
   </div>
 
-  <!-- Hidden file input for folder picker -->
-  <input
-    bind:this={fileInput}
-    type="file"
-    webkitdirectory
-    multiple
-    class="hidden"
-    onchange={handleFolderSelect}
-    aria-hidden="true"
-    tabindex="-1"
-  />
 </div>

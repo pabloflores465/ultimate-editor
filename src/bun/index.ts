@@ -1,6 +1,10 @@
 import { BrowserWindow, Updater, ApplicationMenu, BrowserView } from "electrobun/bun";
 const { setApplicationMenu, on } = ApplicationMenu;
 import { createTerminalForWorkspace, writeToTty, resizePty, destroyTerminal } from "./terminal";
+import * as git from "./git";
+
+// Save the initial CWD before it can change
+process.env.INITIAL_CWD = process.cwd();
 
 const DEV_SERVER_PORT = 5173;
 const DEV_SERVER_URL = `http://localhost:${DEV_SERVER_PORT}`;
@@ -20,6 +24,17 @@ type AppSchema = {
       "terminal:ready": { workspaceId: string };
       /** Destroy terminal session when user closes a pane */
       "terminal:destroy": { workspaceId: string };
+      /** Execute a run command in the terminal */
+      "run:execute": { command: string; workspaceId: string };
+      /** Get current working directory */
+      "get-cwd": Record<string, never>;
+      /** Git operations */
+      "git:open": { path: string };
+      "git:status": { path: string };
+      "git:diff": { path: string; filePath: string };
+      "git:log": { path: string; maxCount?: number };
+      "git:stage": { path: string; filePath?: string };
+      "git:commit": { path: string; message: string };
     };
   };
   webview: {
@@ -31,8 +46,13 @@ type AppSchema = {
       "terminal:exited": { workspaceId: string };
       "menu:open-settings": Record<string, never>;
       "menu:new-file": Record<string, never>;
-      "menu:open-file": Record<string, never>;
+      "menu:open-file": { path: string };
       "menu:save-file": Record<string, never>;
+      "get-cwd": { cwd: string };
+      "git:status": { isRepo: boolean; branch: string; changes: git.GitChange[] };
+      "git:diff": { filePath: string; diff: string };
+      "git:log": { commits: git.GitCommit[] };
+      "git:error": { message: string };
     };
   };
 };
@@ -48,6 +68,9 @@ const workspaceBuffers = new Map<string, string[]>();
 // yet when the first resize comes in.  We store it here and replay it once
 // the session is created in the terminal:ready handler.
 const pendingResize = new Map<string, { cols: number; rows: number }>();
+
+// Store git root per workspace
+let currentGitRoot: string | null = null;
 
 function sendOrBuffer(workspaceId: string, b64: string): void {
   if (workspaceReady.get(workspaceId)) {
@@ -118,6 +141,95 @@ const rpc = BrowserView.defineRPC<AppSchema>({
         workspaceBuffers.delete(workspaceId);
         pendingResize.delete(workspaceId);
         destroyTerminal(workspaceId);
+      },
+      "run:execute": ({ command, workspaceId }) => {
+        console.log(`[index.ts] run:execute received for ${workspaceId}: ${command}`);
+        // Encode command as PTY input (base64)
+        const b64 = Buffer.from(command + "\n").toString("base64");
+        writeToTty(workspaceId, b64);
+      },
+      "get-cwd": () => {
+        const cwd = process.cwd();
+        console.log(`[index.ts] get-cwd: ${cwd}`);
+        sendToWebview("get-cwd", { cwd });
+      },
+      "git:open": async ({ path }) => {
+        console.log(`[index.ts] git:open received for ${path}`);
+        const gitRoot = await git.openRepository(path);
+        if (!gitRoot) {
+          sendToWebview("git:error", { message: "Not a git repository" });
+          return;
+        }
+        currentGitRoot = gitRoot;
+        console.log(`[index.ts] currentGitRoot set to: ${currentGitRoot}`);
+        const [status, commits] = await Promise.all([
+          git.getStatus(gitRoot),
+          git.getLog(gitRoot, 50),
+        ]);
+        sendToWebview("git:status", status);
+        sendToWebview("git:log", { commits });
+      },
+      "git:status": async ({ path }) => {
+        console.log(`[index.ts] git:status received for ${path}`);
+        const repoPath = currentGitRoot || path;
+        try {
+          const [status, commits] = await Promise.all([
+            git.getStatus(repoPath),
+            git.getLog(repoPath, 50),
+          ]);
+          sendToWebview("git:status", status);
+          sendToWebview("git:log", { commits });
+        } catch (e) {
+          sendToWebview("git:error", { message: String(e) });
+        }
+      },
+      "git:diff": async ({ path, filePath }) => {
+        console.log(`[index.ts] git:diff received for ${filePath}`);
+        const repoPath = currentGitRoot || path;
+        try {
+          const diff = await git.getDiff(repoPath, filePath);
+          console.log(`[index.ts] git:diff result length: ${diff.length}`);
+          sendToWebview("git:diff", { filePath, diff });
+        } catch (e) {
+          console.error(`[index.ts] git:diff error:`, e);
+          sendToWebview("git:error", { message: String(e) });
+        }
+      },
+      "git:log": async ({ path, maxCount }) => {
+        console.log(`[index.ts] git:log received for ${path}`);
+        const repoPath = currentGitRoot || path;
+        try {
+          const commits = await git.getLog(repoPath, maxCount ?? 50);
+          sendToWebview("git:log", { commits });
+        } catch (e) {
+          sendToWebview("git:error", { message: String(e) });
+        }
+      },
+      "git:stage": async ({ path, filePath }) => {
+        console.log(`[index.ts] git:stage received for ${filePath || "all"}`);
+        try {
+          if (filePath) {
+            await git.stageFile(path, filePath);
+          } else {
+            await git.stageAll(path);
+          }
+          const status = await git.getStatus(path);
+          sendToWebview("git:status", status);
+        } catch (e) {
+          sendToWebview("git:error", { message: String(e) });
+        }
+      },
+      "git:commit": async ({ path, message }) => {
+        console.log(`[index.ts] git:commit received for ${path}`);
+        try {
+          await git.commit(path, message);
+          const status = await git.getStatus(path);
+          sendToWebview("git:status", status);
+          const commits = await git.getLog(path, 50);
+          sendToWebview("git:log", { commits });
+        } catch (e) {
+          sendToWebview("git:error", { message: String(e) });
+        }
       },
     },
   },
@@ -220,7 +332,7 @@ on("application-menu-clicked", (event: unknown) => {
   switch (action) {
     case "open-settings": sendToWebview("menu:open-settings", {}); break;
     case "new-file":      sendToWebview("menu:new-file", {});      break;
-    case "open-file":     sendToWebview("menu:open-file", {});     break;
+    case "open-file":     sendToWebview("menu:open-file", { path: process.cwd() });     break;
     case "save-file":     sendToWebview("menu:save-file", {});     break;
   }
 });

@@ -9,6 +9,66 @@
   import { workspaceStore } from "../stores/workspaceStore.svelte";
   import { Electroview } from "electrobun/view";
 
+  // ── Git state ────────────────────────────────────────────────
+  interface GitChange {
+    path: string;
+    index: string;
+    workingTree: string;
+    status: "modified" | "added" | "deleted" | "renamed" | "untracked";
+  }
+  interface GitCommit {
+    hash: string;
+    date: string;
+    message: string;
+    author_name: string;
+    author_email: string;
+  }
+  let gitIsRepo = $state(false);
+  let gitBranch = $state("");
+  let gitChanges = $state<GitChange[]>([]);
+  let gitDiffs = $state<Map<string, string>>(new Map());
+  let gitCommits = $state<GitCommit[]>([]);
+  let gitLoading = $state(false);
+  let gitCurrentPath = $state("");
+
+  function gitOpenRepo(path: string) {
+    if (path === gitCurrentPath) return;
+    gitCurrentPath = path;
+    gitLoading = true;
+    termRpc.send["git:open"]({ path });
+  }
+  function gitRefresh() {
+    if (!gitCurrentPath) return;
+    gitLoading = true;
+    termRpc.send["git:status"]({ path: gitCurrentPath });
+  }
+  function gitGetDiff(filePath: string) {
+    if (!gitCurrentPath) return;
+    if (!gitDiffs.has(filePath)) {
+      termRpc.send["git:diff"]({ path: gitCurrentPath, filePath });
+    }
+  }
+  function gitStatusColor(status: GitChange["status"]): string {
+    switch (status) {
+      case "modified": return "#e2c08d";
+      case "added": return "#629755";
+      case "deleted": return "#f14c4c";
+      case "renamed": return "#4e9ede";
+      case "untracked": return "#9876aa";
+      default: return "#a9b7c6";
+    }
+  }
+  function gitStatusLetter(status: GitChange["status"]): string {
+    switch (status) {
+      case "modified": return "M";
+      case "added": return "A";
+      case "deleted": return "D";
+      case "renamed": return "R";
+      case "untracked": return "U";
+      default: return "?";
+    }
+  }
+
   // ── Props ─────────────────────────────────────────────────────
   let {
     children,
@@ -27,8 +87,12 @@
   let resizingRight  = $state(false);
   let resizingBottom = $state(false);
   let runConfigOpen  = $state(false);
+  let runEditOpen    = $state(false);
+  let runOutput      = $state<string[]>([]);
+  let newConfig      = $state("");
   let hamburgerOpen  = $state(false);
   let toolbarOpen    = $state(true);
+  let selectedDiffFile = $state<string | null>(null);
   // mode is stored globally so WorkspaceTabBar can also toggle it
   const mode = $derived(workspaceStore.mode);
 
@@ -145,11 +209,40 @@
 
   let hasProject = $derived(ws.project.fileNodes.length > 0);
 
+  // ── Git integration ─────────────────────────────────────────
+  $effect(() => {
+    if (ws.project.rootPath) {
+      gitOpenRepo(ws.project.rootPath);
+    }
+  });
+
+  $effect(() => {
+    if (ws.activeTool === "git" && gitIsRepo) {
+      gitRefresh();
+    }
+  });
+
   // (file tree is now managed by Sidebar.svelte)
 
   // ── Editor icon colors ────────────────────────────────────────
   function iconColor(icon: string) {
     return ({ svelte:"#ff6b6b", ts:"#4e9ede", tsx:"#4e9ede", js:"#ffc66d", jsx:"#ffc66d", css:"#9876aa", scss:"#9876aa", json:"#aed9b8", html:"#cc7832", md:"#a9b7c6" } as Record<string,string>)[icon] ?? "#a9b7c6";
+  }
+
+  // ── Time formatting ──────────────────────────────────────────
+  function formatTimeAgo(dateStr: string): string {
+    const date = new Date(dateStr);
+    const now = new Date();
+    const diffMs = now.getTime() - date.getTime();
+    const diffSec = Math.floor(diffMs / 1000);
+    const diffMin = Math.floor(diffSec / 60);
+    const diffHour = Math.floor(diffMin / 60);
+    const diffDay = Math.floor(diffHour / 24);
+
+    if (diffDay > 0) return diffDay === 1 ? "1 day ago" : `${diffDay} days ago`;
+    if (diffHour > 0) return diffHour === 1 ? "1 hour ago" : `${diffHour} hours ago`;
+    if (diffMin > 0) return diffMin === 1 ? "1 minute ago" : `${diffMin} minutes ago`;
+    return "just now";
   }
 
   // ── Active editor tab (from store) ───────────────────────────
@@ -205,7 +298,7 @@
   }
 
   // ── Run config ────────────────────────────────────────────
-  const runConfigs = ["bun run dev", "bun run build", "bun run hmr"];
+  let runConfigs = $state(["bun run dev", "bun run build", "bun run hmr"]);
 
   // ── Window width tracking ─────────────────────────────
   let windowWidth  = $state(window.innerWidth);
@@ -268,6 +361,7 @@
         "terminal:resize": { cols: number; rows: number; workspaceId: string };
         "terminal:ready": { workspaceId: string };
         "terminal:destroy": { workspaceId: string };
+        "run:execute": { command: string; workspaceId: string };
       };
     };
     webview: {
@@ -329,8 +423,25 @@
         },
         "menu:open-settings": () => { /* TODO */ },
         "menu:new-file":      () => { /* TODO */ },
-        "menu:open-file":     () => { /* TODO */ },
+        "menu:open-file":     (data: { path: string }) => { console.log("menu:open-file received, cwd:", data.path); },
         "menu:save-file":     () => { saveCurrentFile(); },
+        "git:status": (data: { isRepo: boolean; branch: string; changes: GitChange[] }) => {
+          gitIsRepo = data.isRepo;
+          gitBranch = data.branch;
+          gitChanges = data.changes;
+          gitLoading = false;
+        },
+        "git:diff": (data: { filePath: string; diff: string }) => {
+          gitDiffs.set(data.filePath, data.diff);
+          gitDiffs = new Map(gitDiffs);
+        },
+        "git:log": (data: { commits: GitCommit[] }) => {
+          gitCommits = data.commits;
+        },
+        "git:error": (data: { message: string }) => {
+          console.error("Git error:", data.message);
+          gitLoading = false;
+        },
       },
     },
   });
@@ -354,6 +465,10 @@
   function handleTermResize(termId: string, cols: number, rows: number) {
     if (tiling.isClosing(termId)) return;
     termRpc.send["terminal:resize"]({ cols, rows, workspaceId: termId });
+  }
+  function handleRunExecute(command: string) {
+    console.log(`[EditorLayout] handleRunExecute: ${command}`);
+    termRpc.send["run:execute"]({ command, workspaceId: ws.id });
   }
   function handleTermMounted(termId: string, writeFn: (b64: string) => void) {
     if (tiling.isClosing(termId)) return;
@@ -525,12 +640,24 @@
               {cfg}
             </button>
           {/each}
+          <div class="border-t border-jb-border my-1"></div>
+          <button
+            class="w-full text-left px-3 py-1.5 text-[12px] text-jb-muted hover:bg-jb-select flex items-center gap-2"
+            onclick={() => { runConfigOpen = false; runEditOpen = true; }}
+          >
+            <svg viewBox="0 0 12 12" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M7 1v10M1 6h10"/></svg>
+            Edit configurations...
+          </button>
         </div>
       {/if}
     </div>
 
     <!-- Run -->
-    <button title="Run '{ws.selectedConfig}' (⌘R)" class="flex items-center justify-center w-[28px] h-[28px] rounded hover:bg-jb-hover">
+    <button
+      title="Run '{ws.selectedConfig}' (⌘R)"
+      onclick={() => { onUpdate({ activeBottom: "run", bottomPanelOpen: true }); handleRunExecute(ws.selectedConfig); }}
+      class="flex items-center justify-center w-[28px] h-[28px] rounded hover:bg-jb-hover"
+    >
       <svg viewBox="0 0 16 16" width="16" height="16" fill="none">
         <circle cx="8" cy="8" r="7" fill="#629755" opacity="0.15"/>
         <polygon points="5.5,4 12.5,8 5.5,12" fill="#629755"/>
@@ -655,6 +782,7 @@
             onFileOpen={(path, name, icon, content) =>
               workspaceStore.openFile(ws.id, path, name, icon, content)
             }
+            onFolderOpen={(path) => gitOpenRepo(path)}
             workspaceId={ws.id}
             projectRootName={ws.project.rootName}
             projectFileNodes={ws.project.fileNodes}
@@ -705,32 +833,85 @@
             </div>
 
           {:else if ws.activeTool === "git"}
-            <div class="px-2 py-2">
-              <div class="text-[11px] font-semibold text-jb-muted mb-2 px-1">LOCAL CHANGES</div>
-              {#each [
-                { s:"M", n:"App.svelte",         color:"#e2c08d" },
-                { s:"M", n:"app.css",             color:"#e2c08d" },
-                { s:"A", n:"EditorLayout.svelte", color:"#629755" },
-                { s:"A", n:"FileTree.svelte",     color:"#629755" },
-              ] as f}
-                <div class="flex items-center gap-2 h-[22px] px-2 rounded text-[12px] hover:bg-jb-hover cursor-pointer">
-                  <span class="font-bold text-[11px] w-3 text-center" style="color:{f.color}">{f.s}</span>
-                  <span class="text-jb-text">{f.n}</span>
+            <div class="px-2 py-2 flex flex-col h-full">
+              {#if !gitIsRepo}
+                <div class="flex flex-col items-center justify-center h-full text-jb-muted text-[12px] gap-2">
+                  <svg viewBox="0 0 24 24" width="32" height="32" fill="none" stroke="currentColor" stroke-width="1.5" opacity="0.4">
+                    <circle cx="12" cy="12" r="3"/>
+                    <path d="M12 2v4m0 12v4M2 12h4m12 0h4"/>
+                    <path d="M4.93 4.93l2.83 2.83m8.48 8.48l2.83 2.83M4.93 19.07l2.83-2.83m8.48-8.48l2.83-2.83"/>
+                  </svg>
+                  <span class="text-center">Open a folder to see Git changes</span>
                 </div>
-              {/each}
-              <div class="mt-3 text-[11px] font-semibold text-jb-muted px-1">LOG</div>
-              {#each [
-                { hash:"a3f2e1b", msg:"Initial commit",         author:"Pablo",  time:"2 hours ago" },
-                { hash:"c891d3a", msg:"Add WebGL triangle page", author:"Pablo",  time:"1 day ago" },
-              ] as commit}
-                <div class="flex flex-col px-2 py-1 hover:bg-jb-hover rounded cursor-pointer">
-                  <div class="flex items-center gap-2 text-[12px]">
-                    <span class="text-jb-blue font-mono text-[10px]">{commit.hash}</span>
-                    <span class="text-jb-text flex-1 overflow-hidden text-ellipsis whitespace-nowrap">{commit.msg}</span>
+              {:else}
+                <div class="flex items-center justify-between mb-2 px-1">
+                  <span class="text-[11px] font-semibold text-jb-muted">{gitBranch}</span>
+                  <button
+                    onclick={() => gitRefresh()}
+                    class="text-[10px] px-1.5 py-0.5 rounded bg-jb-border/50 text-jb-muted hover:bg-jb-border hover:text-jb-text border-none cursor-pointer"
+                    title="Refresh"
+                  >↻</button>
+                </div>
+                
+                <div class="text-[11px] font-semibold text-jb-muted mb-1 px-1">CHANGES ({gitChanges.length})</div>
+                {#if gitChanges.length === 0}
+                  <div class="text-[11px] text-jb-muted px-1 py-2 italic">No changes</div>
+                {:else}
+                  <div class="flex-1 overflow-y-auto">
+                    {#each gitChanges as change (change.path)}
+                      <button
+                        onclick={() => {
+                          if (selectedDiffFile === change.path) {
+                            selectedDiffFile = null;
+                          } else {
+                            selectedDiffFile = change.path;
+                            gitGetDiff(change.path);
+                          }
+                        }}
+                        class="w-full flex items-center gap-2 h-[22px] px-2 rounded text-[12px] hover:bg-jb-hover cursor-pointer text-left"
+                      >
+                        <span class="font-bold text-[11px] w-3 text-center" style="color:{gitStatusColor(change.status)}">
+                          {gitStatusLetter(change.status)}
+                        </span>
+                        <span class="text-jb-text flex-1 overflow-hidden text-ellipsis whitespace-nowrap">{change.path}</span>
+                        {#if selectedDiffFile === change.path}
+                          <span class="text-jb-muted text-[10px]">▼</span>
+                        {:else}
+                          <span class="text-jb-muted text-[10px]">▶</span>
+                        {/if}
+                      </button>
+                      {#if selectedDiffFile === change.path}
+                        <div class="ml-4 mr-1 mb-1 text-[11px] font-mono bg-jb-panel rounded border border-jb-border overflow-x-auto">
+                          {#if gitDiffs.get(change.path)}
+                            <pre class="p-2 whitespace-pre-wrap break-all text-[10px] leading-relaxed">{gitDiffs.get(change.path)}</pre>
+                          {:else}
+                            <div class="p-2 text-jb-muted italic">Loading diff...</div>
+                          {/if}
+                        </div>
+                      {/if}
+                    {/each}
                   </div>
-                  <div class="text-[11px] text-jb-muted">{commit.author} · {commit.time}</div>
+                {/if}
+
+                <div class="mt-3 pt-2 border-t border-jb-border">
+                  <div class="text-[11px] font-semibold text-jb-muted mb-1 px-1">COMMIT LOG</div>
+                  <div class="max-h-[180px] overflow-y-auto">
+                    {#if gitCommits.length === 0}
+                      <div class="text-[11px] text-jb-muted px-1 py-2 italic">No commits</div>
+                    {:else}
+                      {#each gitCommits.slice(0, 20) as commit}
+                        <div class="flex flex-col px-2 py-1 hover:bg-jb-hover rounded cursor-pointer">
+                          <div class="flex items-center gap-2 text-[12px]">
+                            <span class="text-jb-blue font-mono text-[10px]">{commit.hash}</span>
+                            <span class="text-jb-text flex-1 overflow-hidden text-ellipsis whitespace-nowrap">{commit.message}</span>
+                          </div>
+                          <div class="text-[11px] text-jb-muted">{commit.author_name} · {formatTimeAgo(commit.date)}</div>
+                        </div>
+                      {/each}
+                    {/if}
+                  </div>
                 </div>
-              {/each}
+              {/if}
             </div>
 
           {:else if ws.activeTool === "database"}
@@ -1157,7 +1338,48 @@
                 </div>
               </div>
 
-              {#if ws.activeBottom === "problems"}
+              {#if runEditOpen}
+                <div class="flex-1 flex flex-col min-h-0 overflow-hidden bg-jb-bg z-50">
+                  <div class="flex items-center gap-2 bg-jb-panel h-[26px] border-b border-jb-border flex-shrink-0 px-3 text-[11px] text-jb-muted">
+                    <svg viewBox="0 0 12 12" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 1v10M1 6h10"/></svg>
+                    <span class="text-jb-text">Edit Run Configurations</span>
+                    <button
+                      onclick={() => runEditOpen = false}
+                      class="ml-auto px-1.5 py-0.5 rounded text-[10px] bg-jb-border/50 text-jb-muted hover:bg-jb-border hover:text-jb-text border-none cursor-pointer"
+                    >Close</button>
+                  </div>
+                  <div class="flex-1 overflow-y-auto px-3 py-3">
+                    <div class="text-[12px] text-jb-text mb-3">Current configurations:</div>
+                    <div class="space-y-2">
+                      {#each runConfigs as cfg, i}
+                        <div class="flex items-center gap-2">
+                          <svg viewBox="0 0 12 12" width="10" height="10" fill="#629755"><polygon points="2,1 10,6 2,11"/></svg>
+                          <span class="flex-1 text-[12px] text-jb-text font-mono">{cfg}</span>
+                          <button
+                            onclick={() => { runConfigs = runConfigs.filter((_, idx) => idx !== i); }}
+                            class="px-1.5 py-0.5 rounded text-[10px] bg-red-500/20 text-red-400 hover:bg-red-500/30 border-none cursor-pointer"
+                          >Remove</button>
+                        </div>
+                      {/each}
+                    </div>
+                    <div class="mt-4 pt-3 border-t border-jb-border">
+                      <div class="text-[12px] text-jb-text mb-2">Add new configuration:</div>
+                      <div class="flex items-center gap-2">
+                        <input
+                          bind:value={newConfig}
+                          placeholder="e.g., bun run dev"
+                          class="flex-1 px-2 py-1 text-[12px] bg-jb-panel border border-jb-border rounded text-jb-text placeholder:text-jb-muted focus:outline-none focus:border-jb-blue"
+                        />
+                        <button
+                          onclick={() => { if (newConfig.trim()) { runConfigs = [...runConfigs, newConfig.trim()]; newConfig = ""; } }}
+                          class="px-2 py-1 rounded text-[11px] bg-jb-green/20 text-jb-green hover:bg-jb-green/30 border-none cursor-pointer"
+                        >Add</button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+              {:else if ws.activeBottom === "problems"}
                 <div class="flex-1 flex flex-col min-h-0 overflow-hidden">
                   <div class="flex items-center bg-jb-panel h-[26px] border-b border-jb-border flex-shrink-0 px-3 gap-2 text-[11px] text-jb-muted">
                     <span>Scope: Current File</span>
@@ -1171,32 +1393,74 @@
 
               {:else if ws.activeBottom === "git"}
                 <div class="flex-1 overflow-y-auto px-3 py-2 text-[12px]">
-                  <div class="text-jb-muted text-[11px] font-semibold mb-2">BRANCHES</div>
-                  {#each [{ name:"main", active:true },{ name:"feature/jb-layout", active:false }] as br}
-                    <div class="flex items-center gap-2 h-[22px] px-1 rounded hover:bg-jb-hover cursor-pointer">
-                      {#if br.active}
-                        <span class="text-[9px] text-jb-green">●</span>
-                      {:else}
-                        <span class="text-[9px] text-jb-muted">○</span>
-                      {/if}
-                      <span class="{br.active ? 'text-jb-text font-medium' : 'text-jb-muted'}">{br.name}</span>
+                  {#if !gitIsRepo}
+                    <div class="flex items-center justify-center h-full text-jb-muted text-[12px]">
+                      Not a git repository
                     </div>
-                  {/each}
+                  {:else}
+                    <div class="text-jb-muted text-[11px] font-semibold mb-2">CURRENT BRANCH</div>
+                    <div class="flex items-center gap-2 h-[22px] px-1 rounded bg-jb-hover">
+                      <span class="text-[9px] text-jb-green">●</span>
+                      <span class="text-jb-text font-medium">{gitBranch}</span>
+                    </div>
+                    <div class="mt-3 text-[11px] font-semibold text-jb-muted mb-2">STAGED CHANGES</div>
+                    {#if gitChanges.filter(c => c.status !== "untracked" && c.index !== "?").length === 0}
+                      <div class="text-[11px] text-jb-muted italic px-1">No staged changes</div>
+                    {:else}
+                      {#each gitChanges.filter(c => c.status !== "untracked" && c.index !== "?") as change}
+                        <div class="flex items-center gap-2 h-[22px] px-1 rounded hover:bg-jb-hover">
+                          <span class="font-bold text-[10px] w-3 text-center" style="color:{gitStatusColor(change.status)}">{gitStatusLetter(change.status)}</span>
+                          <span class="text-jb-text text-[12px]">{change.path}</span>
+                        </div>
+                      {/each}
+                    {/if}
+                    <div class="mt-3 pt-2 border-t border-jb-border">
+                      <div class="text-[11px] font-semibold text-jb-muted mb-2">UNSTAGED CHANGES</div>
+                      {#if gitChanges.filter(c => c.status === "untracked" || c.workingTree === "?").length === 0}
+                        <div class="text-[11px] text-jb-muted italic px-1">No unstaged changes</div>
+                      {:else}
+                        {#each gitChanges.filter(c => c.status === "untracked" || c.workingTree === "?") as change}
+                          <div class="flex items-center gap-2 h-[22px] px-1 rounded hover:bg-jb-hover">
+                            <span class="font-bold text-[10px] w-3 text-center" style="color:{gitStatusColor(change.status)}">{gitStatusLetter(change.status)}</span>
+                            <span class="text-jb-text text-[12px]">{change.path}</span>
+                          </div>
+                        {/each}
+                      {/if}
+                    </div>
+                  {/if}
                 </div>
 
               {:else if ws.activeBottom === "run"}
                 <div class="flex-1 flex flex-col min-h-0 overflow-hidden">
                   <div class="flex items-center gap-2 bg-jb-panel h-[26px] border-b border-jb-border flex-shrink-0 px-3 text-[11px] text-jb-muted">
                     <svg viewBox="0 0 12 12" width="10" height="10" fill="#629755"><polygon points="2,1 10,6 2,11"/></svg>
-                    <span class="text-jb-text">bun run dev</span>
-                    <span class="ml-auto text-jb-green">● Running</span>
+                    <span class="text-jb-text">{ws.selectedConfig}</span>
+                    <button
+                      onclick={() => { runOutput = []; handleRunExecute(ws.selectedConfig); }}
+                      class="ml-2 px-1.5 py-0.5 rounded text-[10px] bg-jb-green/20 text-jb-green hover:bg-jb-green/30 border-none cursor-pointer"
+                    >Run Again</button>
+                    <button
+                      onclick={() => { onUpdate({ activeBottom: "terminal" }); }}
+                      class="ml-auto px-1.5 py-0.5 rounded text-[10px] bg-jb-border/50 text-jb-muted hover:bg-jb-border hover:text-jb-text border-none cursor-pointer"
+                    >Go to Terminal</button>
                   </div>
                   <div class="flex-1 overflow-y-auto px-3 py-2 font-mono text-[12px] leading-relaxed bg-jb-bg">
-                    <div class="text-jb-muted text-[12px] italic">No run output yet.</div>
+                    {#if runOutput.length > 0}
+                      {#each runOutput as line}
+                        <div class="text-jb-text whitespace-pre-wrap">{line}</div>
+                      {/each}
+                    {:else}
+                      <div class="text-jb-muted text-[12px] italic">
+                        Click "Run" or "Run Again" to execute: <span class="text-jb-text">{ws.selectedConfig}</span>
+                      </div>
+                      <div class="mt-3 text-jb-muted text-[11px]">
+                        Configure run commands in the toolbar dropdown.
+                      </div>
+                    {/if}
                   </div>
                 </div>
 
-              {:else if ws.activeBottom !== "terminal"}
+                            {:else if ws.activeBottom !== "terminal"}
                 <div class="flex items-center justify-center h-full text-jb-muted text-[12px]">No services configured.</div>
               {/if}
 
