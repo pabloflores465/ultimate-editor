@@ -151,12 +151,16 @@
     height: 100%;
     overflow: hidden;
     background: #1e1f22;
+    outline: none;
+    border: none;
   }
 
   /* xterm.js internal layout fixes */
   :global(.terminal-host .xterm) {
     height: 100%;
     padding: 0;
+    outline: none;
+    border: none;
   }
   :global(.terminal-host .xterm-helper-textarea) {
     position: absolute;
@@ -169,24 +173,26 @@
     overflow-y: scroll !important;
     overflow-x: auto !important;
     background-color: #1e1f22 !important;
+    outline: none !important;
+    border: none !important;
   }
   :global(.terminal-host .xterm-viewport::-webkit-scrollbar) {
     width: 10px;
     height: 10px;
   }
   :global(.terminal-host .xterm-viewport::-webkit-scrollbar-track) {
-    background: #2b2d30;
+    background: #1e1f22;
   }
   :global(.terminal-host .xterm-viewport::-webkit-scrollbar-thumb) {
-    background: #4c5052;
+    background: #2b2d30;
     border-radius: 5px;
-    border: 2px solid #2b2d30;
+    border: none;
   }
   :global(.terminal-host .xterm-viewport::-webkit-scrollbar-thumb:hover) {
-    background: #5c6062;
+    background: #4c5052;
   }
   :global(.terminal-host .xterm-viewport::-webkit-scrollbar-corner) {
-    background: #2b2d30;
+    background: #1e1f22;
   }
   :global(.terminal-host .xterm-rows) {
     line-height: 1 !important;

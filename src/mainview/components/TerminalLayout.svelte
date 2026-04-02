@@ -16,7 +16,6 @@
   } = $props();
 
   const DIVIDER_SIZE_PX = 4;
-  const DIVIDER_GAP_PX = 1;
 
   interface Bounds {
     x: number;
@@ -45,26 +44,25 @@
       result.set(n.id, bounds);
     } else {
       const split = n as SplitNode;
-      const divSpace = DIVIDER_SIZE_PX + DIVIDER_GAP_PX * 2;
-      const divPx = divSpace / containerPxW * 100;
+      const divPx = DIVIDER_SIZE_PX / containerPxW * 100;
       if (split.direction === "vertical") {
-        const firstW = bounds.w * split.ratio - divPx;
+        const firstW = bounds.w * split.ratio - divPx / 2;
         computeLayout(split.first, { ...bounds, w: firstW }, containerPxW, containerPxH, result);
         computeLayout(split.second, { 
-          x: bounds.x + bounds.w * split.ratio + divPx, 
+          x: bounds.x + bounds.w * split.ratio + divPx / 2, 
           y: bounds.y, 
-          w: bounds.w - bounds.w * split.ratio - divPx, 
+          w: bounds.w - bounds.w * split.ratio - divPx / 2, 
           h: bounds.h 
         }, containerPxW, containerPxH, result);
       } else {
-        const divPy = divSpace / containerPxH * 100;
-        const firstH = bounds.h * split.ratio - divPy;
+        const divPy = DIVIDER_SIZE_PX / containerPxH * 100;
+        const firstH = bounds.h * split.ratio - divPy / 2;
         computeLayout(split.first, { ...bounds, h: firstH }, containerPxW, containerPxH, result);
         computeLayout(split.second, { 
           x: bounds.x, 
-          y: bounds.y + bounds.h * split.ratio + divPy, 
+          y: bounds.y + bounds.h * split.ratio + divPy / 2, 
           w: bounds.w, 
-          h: bounds.h - bounds.h * split.ratio - divPy 
+          h: bounds.h - bounds.h * split.ratio - divPy / 2 
         }, containerPxW, containerPxH, result);
       }
     }
@@ -81,46 +79,45 @@
     function traverse(node: TilingNode, b: Bounds): void {
       if (node.type === "split") {
         const split = node as SplitNode;
-        const divSpace = DIVIDER_SIZE_PX + DIVIDER_GAP_PX * 2;
         if (split.direction === "vertical") {
-          const divPx = divSpace / containerPxW * 100;
+          const divPx = DIVIDER_SIZE_PX / containerPxW * 100;
           result.push({ 
             splitId: split.id, 
-            x: b.x + bounds.w * split.ratio - divPx / 2, 
+            x: b.x + b.w * split.ratio - divPx / 2, 
             y: b.y, 
             w: `${DIVIDER_SIZE_PX}px`, 
             h: "100%", 
             isVertical: true 
           });
-          traverse(split.first, { ...b, w: bounds.w * split.ratio - divPx }, containerPxW, containerPxH);
+          traverse(split.first, { ...b, w: b.w * split.ratio - divPx / 2 });
           traverse(split.second, { 
-            x: b.x + bounds.w * split.ratio + divPx / 2, 
+            x: b.x + b.w * split.ratio + divPx / 2, 
             y: b.y, 
-            w: b.w - bounds.w * split.ratio - divPx, 
+            w: b.w - b.w * split.ratio - divPx / 2, 
             h: b.h 
-          }, containerPxW, containerPxH);
+          });
         } else {
-          const divPy = divSpace / containerPxH * 100;
+          const divPy = DIVIDER_SIZE_PX / containerPxH * 100;
           result.push({ 
             splitId: split.id, 
             x: b.x, 
-            y: b.y + bounds.h * split.ratio - divPy / 2, 
+            y: b.y + b.h * split.ratio - divPy / 2, 
             w: "100%", 
             h: `${DIVIDER_SIZE_PX}px`, 
             isVertical: false 
           });
-          traverse(split.first, { ...b, h: bounds.h * split.ratio - divPy }, containerPxW, containerPxH);
+          traverse(split.first, { ...b, h: b.h * split.ratio - divPy / 2 });
           traverse(split.second, { 
             x: b.x, 
-            y: b.y + bounds.h * split.ratio + divPy / 2, 
+            y: b.y + b.h * split.ratio + divPy / 2, 
             w: b.w, 
-            h: b.h - bounds.h * split.ratio - divPy 
-          }, containerPxW, containerPxH);
+            h: b.h - b.h * split.ratio - divPy / 2 
+          });
         }
       }
     }
     
-    traverse(n, bounds, containerPxW, containerPxH);
+    traverse(n, bounds);
     return result;
   }
 
@@ -213,7 +210,7 @@
       style:top="{div.y}%"
       style:width="{div.w}"
       style:height="{div.h}"
-      style:box-shadow={div.isVertical ? "inset 1px 0 0 rgba(255,255,255,0.05)" : "inset 0 1px 0 rgba(255,255,255,0.05)"}
+
       onmousedown={(e) => startDrag(e, div)}
     ></div>
   {/each}
