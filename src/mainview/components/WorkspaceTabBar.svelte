@@ -76,51 +76,58 @@
   >+</button>
 
   <div class="tabs">
-    {#each workspaceStore.workspaces as ws, i (ws.id)}
-      <!-- svelte-ignore a11y_no_static_element_interactions -->
-      <div
-        class="tab electrobun-webkit-app-region-no-drag"
-        class:tab--active={i === workspaceStore.activeIndex}
-        class:tab--drag-over={dragOverIdx === i && dragIdx !== i}
-        class:tab--dragging={dragIdx === i}
-        draggable="true"
-        onclick={() => workspaceStore.switchTo(i)}
-        ondblclick={(e) => startRename(ws.id, ws.name, e)}
-        ondragstart={(e) => onDragStart(e, i)}
-        ondragover={(e) => onDragOver(e, i)}
-        ondrop={(e) => onDrop(e, i)}
-        ondragend={onDragEnd}
-        role="tab"
-        tabindex="0"
-        aria-selected={i === workspaceStore.activeIndex}
-        onkeydown={(e) => { if (e.key === "Enter" || e.key === " ") workspaceStore.switchTo(i); }}
-      >
-        {#if editingId === ws.id}
-          <!-- svelte-ignore a11y_autofocus -->
-          <input
-            class="tab-rename"
-            bind:value={editValue}
-            onblur={() => commitRename(ws.id)}
-            onkeydown={(e) => onRenameKey(e, ws.id)}
-            autofocus
-            onclick={(e) => e.stopPropagation()}
-          />
-        {:else}
-          <span class="tab-name">{ws.name}</span>
-          {#if ws.openTabs.some(t => t.modified)}
-            <span class="tab-dot" title="Unsaved changes"></span>
-          {/if}
-          {#if workspaceStore.workspaces.length > 1}
+    {#if workspaceStore.workspaces.length === 0}
+      <!-- Empty state message in tab bar -->
+      <div class="tab tab--empty">
+        <span class="tab-name tab-name--empty">No workspaces</span>
+      </div>
+    {:else}
+      {#each workspaceStore.workspaces as ws, i (ws.id)}
+        <!-- svelte-ignore a11y_no_static_element_interactions -->
+        <div
+          class="tab electrobun-webkit-app-region-no-drag"
+          class:tab--active={i === workspaceStore.activeIndex}
+          class:tab--drag-over={dragOverIdx === i && dragIdx !== i}
+          class:tab--dragging={dragIdx === i}
+          draggable="true"
+          onclick={() => workspaceStore.switchTo(i)}
+          ondblclick={(e) => startRename(ws.id, ws.name, e)}
+          ondragstart={(e) => onDragStart(e, i)}
+          ondragover={(e) => onDragOver(e, i)}
+          ondrop={(e) => onDrop(e, i)}
+          ondragend={onDragEnd}
+          role="tab"
+          tabindex="0"
+          aria-selected={i === workspaceStore.activeIndex}
+          onkeydown={(e) => { if (e.key === "Enter" || e.key === " ") workspaceStore.switchTo(i); }}
+        >
+          {#if editingId === ws.id}
+            <!-- svelte-ignore a11y_autofocus -->
+            <input
+              class="tab-rename"
+              bind:value={editValue}
+              onblur={() => commitRename(ws.id)}
+              onkeydown={(e) => onRenameKey(e, ws.id)}
+              autofocus
+              onclick={(e) => e.stopPropagation()}
+            />
+          {:else}
+            <span class="tab-name">{ws.name}</span>
+            {#if ws.openTabs.some(t => t.modified)}
+              <span class="tab-dot" title="Unsaved changes"></span>
+            {/if}
+            <!-- Always show close button - allow closing the last workspace -->
             <button
               class="tab-close"
+              class:tab-close--always-visible={workspaceStore.workspaces.length === 1}
               onclick={(e) => closeTab(ws.id, e)}
               tabindex="-1"
               aria-label="Close workspace"
             >×</button>
           {/if}
-        {/if}
-      </div>
-    {/each}
+        </div>
+      {/each}
+    {/if}
   </div>
 
   <!-- Tiling layout buttons -->
@@ -185,7 +192,7 @@
       <rect x="1" y="8" width="5" height="5" rx="0.7" opacity="0.5"/>
       <rect x="8" y="8" width="5" height="5" rx="0.7" opacity="0.5"/>
     </svg>
-    <span>{workspaceStore.active.name}</span>
+    <span>{workspaceStore.active?.name ?? 'Workspaces'}</span>
   </button>
 </div>
 
@@ -314,6 +321,23 @@
   .tab-close:hover {
     background: rgba(255, 255, 255, 0.1);
     color: #dfe1e5;
+  }
+
+  .tab-close--always-visible {
+    visibility: visible;
+  }
+
+  .tab--empty {
+    cursor: default;
+    color: #555759;
+  }
+
+  .tab--empty:hover {
+    background: transparent;
+  }
+
+  .tab-name--empty {
+    font-style: italic;
   }
 
   .tab-rename {

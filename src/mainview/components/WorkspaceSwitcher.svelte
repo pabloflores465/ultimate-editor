@@ -30,6 +30,7 @@
   import WorkspacePreviewFull from "./WorkspacePreviewFull.svelte";
   import WorkspaceOverview from "./WorkspaceOverview.svelte";
   import WorkspaceTabBar from "./WorkspaceTabBar.svelte";
+  import HomeScreen from "./HomeScreen.svelte";
 
   let { children }: { children: import("svelte").Snippet } = $props();
 
@@ -472,7 +473,12 @@
 <!-- ── Workspace tab bar ──────────────────────────────────── -->
 <WorkspaceTabBar />
 
-{#if workspaceStore.tilingLayout !== "single"}
+{#if workspaceStore.workspaces.length === 0}
+  <!-- ── No workspaces - show home screen ─────────────────── -->
+  <div class="ws-viewport">
+    <HomeScreen />
+  </div>
+{:else if workspaceStore.tilingLayout !== "single"}
   <!-- ── Tiled workspace view ──────────────────────────────── -->
   {@const layout = workspaceStore.tilingLayout}
   {@const [ratioCol, ratioRow] = workspaceStore.tilingSplitRatio}

@@ -94,17 +94,24 @@
 
   <!-- Card grid -->
   <div class="ws-overview-grid">
-    {#each filteredWorkspaces as { ws, i } (ws.id)}
-      <WorkspaceCard
-        {ws}
-        active={i === workspaceStore.activeIndex}
-        canDelete={workspaceStore.workspaces.length > 1}
-        onclick={() => workspaceStore.switchTo(i)}
-        ondelete={() => workspaceStore.removeWorkspace(ws.id)}
-      />
-    {/each}
-    {#if filteredWorkspaces.length === 0}
-      <p style="color: rgba(255,255,255,0.35); font-size:13px; grid-column:1/-1; text-align:center; margin:0;">No workspaces match "{searchQuery}"</p>
+    {#if workspaceStore.workspaces.length === 0}
+      <div class="ws-empty-state">
+        <p>No workspaces yet</p>
+        <p style="font-size:12px; opacity:0.5;">Create a new workspace to get started</p>
+      </div>
+    {:else}
+      {#each filteredWorkspaces as { ws, i } (ws.id)}
+        <WorkspaceCard
+          {ws}
+          active={i === workspaceStore.activeIndex}
+          canDelete={true}
+          onclick={() => workspaceStore.switchTo(i)}
+          ondelete={() => workspaceStore.removeWorkspace(ws.id)}
+        />
+      {/each}
+      {#if filteredWorkspaces.length === 0 && searchQuery}
+        <p style="color: rgba(255,255,255,0.35); font-size:13px; grid-column:1/-1; text-align:center; margin:0;">No workspaces match "{searchQuery}"</p>
+      {/if}
     {/if}
 
     <!-- Add new workspace button -->
@@ -121,3 +128,21 @@
     </button>
   </div>
 </div>
+
+<style>
+  .ws-empty-state {
+    grid-column: 1 / -1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 60px 20px;
+    color: rgba(255, 255, 255, 0.35);
+    font-size: 14px;
+    text-align: center;
+  }
+
+  .ws-empty-state p {
+    margin: 4px 0;
+  }
+</style>

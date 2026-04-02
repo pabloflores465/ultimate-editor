@@ -77,8 +77,8 @@ function createWorkspace(name: string): WorkspaceState {
 
 // ── Store ──────────────────────────────────────────────────────
 class WorkspaceStore {
-  workspaces = $state<WorkspaceState[]>([createWorkspace("Workspace 1")]);
-  activeIndex = $state(0);
+  workspaces = $state<WorkspaceState[]>([]);
+  activeIndex = $state(-1);
   overviewOpen = $state(false);
   mode = $state<"editor" | "agent">("editor");
   /** 1 = new workspace is to the right (slide left), -1 = to the left (slide right) */
@@ -86,12 +86,12 @@ class WorkspaceStore {
   /** Incrementing this key forces the {#key} block to re-render with animation */
   transitionKey = $state(0);
 
-  get active(): WorkspaceState {
-    return this.workspaces[this.activeIndex];
+  get active(): WorkspaceState | null {
+    return this.activeIndex >= 0 ? this.workspaces[this.activeIndex] : null;
   }
 
   switchTo(index: number) {
-    if (index === this.activeIndex) return;
+    if (index === this.activeIndex || index < 0 || index >= this.workspaces.length) return;
     this.slideDirection = index > this.activeIndex ? 1 : -1;
     this.activeIndex = index;
     this.transitionKey++;
@@ -101,10 +101,12 @@ class WorkspaceStore {
   }
 
   next() {
+    if (this.workspaces.length === 0) return;
     this.switchTo((this.activeIndex + 1) % this.workspaces.length);
   }
 
   prev() {
+    if (this.workspaces.length === 0) return;
     this.switchTo(
       (this.activeIndex - 1 + this.workspaces.length) % this.workspaces.length
     );
@@ -113,14 +115,26 @@ class WorkspaceStore {
   addWorkspace() {
     const ws = createWorkspace(`Workspace ${this.workspaces.length + 1}`);
     this.workspaces.push(ws);
-    this.switchTo(this.workspaces.length - 1);
+    this.activeIndex = this.workspaces.length - 1;
+    this.slideDirection = 1;
+    this.transitionKey++;
+    this.overviewOpen = false;
+    // Restore the workspace's route (or default to /)
+    push(ws.activeRoute);
   }
 
   removeWorkspace(id: string) {
-    if (this.workspaces.length === 1) return; // always keep at least one
     const idx = this.workspaces.findIndex((w) => w.id === id);
     if (idx === -1) return;
     this.workspaces.splice(idx, 1);
+    
+    // If no workspaces left, reset to empty state
+    if (this.workspaces.length === 0) {
+      this.activeIndex = -1;
+      this.transitionKey++;
+      return;
+    }
+    
     // Keep active index in bounds
     const newIdx = Math.min(this.activeIndex, this.workspaces.length - 1);
     if (this.activeIndex !== newIdx) {
@@ -157,7 +171,9 @@ class WorkspaceStore {
   }
 
   updateActive(patch: Partial<WorkspaceState>) {
-    Object.assign(this.workspaces[this.activeIndex], patch);
+    if (this.activeIndex >= 0 && this.activeIndex < this.workspaces.length) {
+      Object.assign(this.workspaces[this.activeIndex], patch);
+    }
   }
 
   toggleOverview() {
@@ -237,7 +253,9 @@ class WorkspaceStore {
     this.tiledIndices = Array.from({ length: count }, (_, i) => i);
     this.tilingSplitRatio = [0.5, 0.5];
     if (this.tiledFocus >= count) this.tiledFocus = 0;
-    this.activeIndex = this.tiledIndices[this.tiledFocus];
+    if (this.workspaces.length > 0) {
+      this.activeIndex = this.tiledIndices[this.tiledFocus];
+    }
   }
 
   /**
@@ -288,6 +306,7 @@ class WorkspaceStore {
   // ── Breakpoints ─────────────────────────────────────────────
 
   toggleBreakpoint(path: string, line: number) {
+    if (this.activeIndex < 0 || this.activeIndex >= this.workspaces.length) return;
     const ws = this.workspaces[this.activeIndex];
     if (!ws.breakpoints[path]) {
       ws.breakpoints[path] = [line];
@@ -305,6 +324,7 @@ class WorkspaceStore {
   }
 
   getBreakpoints(path: string): number[] {
+    if (this.activeIndex < 0 || this.activeIndex >= this.workspaces.length) return [];
     return this.workspaces[this.activeIndex].breakpoints[path] ?? [];
   }
 }
