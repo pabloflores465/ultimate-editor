@@ -38,6 +38,7 @@
       fontFamily: '"JetBrains Mono", "Cascadia Code", "Fira Code", monospace',
       allowProposedApi: true,
       scrollback: 10000,
+      overviewRuler: { width: 0 },
       theme: {
         background: "#1e1f22",
         foreground: "#a9b7c6",
@@ -153,12 +154,13 @@
     background: #1e1f22;
     outline: none;
     border: none;
+    --vscode-scrollbar-shadow: transparent;
   }
 
   /* xterm.js internal layout fixes */
   :global(.terminal-host .xterm) {
     height: 100%;
-    padding: 0;
+    padding: 0 8px;
     outline: none;
     border: none;
   }
@@ -170,15 +172,17 @@
     z-index: -1;
   }
   :global(.terminal-host .xterm-viewport) {
-    overflow-y: scroll !important;
+    overflow-y: auto !important;
     overflow-x: auto !important;
     background-color: #1e1f22 !important;
     outline: none !important;
     border: none !important;
+    scrollbar-color: #2b2d30 #1e1f22;
+    scrollbar-width: thin;
   }
   :global(.terminal-host .xterm-viewport::-webkit-scrollbar) {
-    width: 10px;
-    height: 10px;
+    width: 8px;
+    height: 8px;
   }
   :global(.terminal-host .xterm-viewport::-webkit-scrollbar-track) {
     background: #1e1f22;
@@ -193,6 +197,10 @@
   }
   :global(.terminal-host .xterm-viewport::-webkit-scrollbar-corner) {
     background: #1e1f22;
+  }
+  :global(.terminal-host .xterm-scrollable-element > .shadow) {
+    display: none !important;
+    box-shadow: none !important;
   }
   :global(.terminal-host .xterm-rows) {
     line-height: 1 !important;

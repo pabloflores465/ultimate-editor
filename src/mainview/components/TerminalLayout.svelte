@@ -45,24 +45,25 @@
     } else {
       const split = n as SplitNode;
       const divPx = DIVIDER_SIZE_PX / containerPxW * 100;
+      const verticalOverlapPx = 1 / containerPxW * 100;
       if (split.direction === "vertical") {
         const firstW = bounds.w * split.ratio - divPx / 2;
         computeLayout(split.first, { ...bounds, w: firstW }, containerPxW, containerPxH, result);
-        computeLayout(split.second, { 
-          x: bounds.x + bounds.w * split.ratio + divPx / 2, 
-          y: bounds.y, 
-          w: bounds.w - bounds.w * split.ratio - divPx / 2, 
-          h: bounds.h 
+        computeLayout(split.second, {
+          x: bounds.x + bounds.w * split.ratio + divPx / 2 - verticalOverlapPx,
+          y: bounds.y,
+          w: bounds.w - bounds.w * split.ratio - divPx / 2 + verticalOverlapPx,
+          h: bounds.h
         }, containerPxW, containerPxH, result);
       } else {
         const divPy = DIVIDER_SIZE_PX / containerPxH * 100;
         const firstH = bounds.h * split.ratio - divPy / 2;
         computeLayout(split.first, { ...bounds, h: firstH }, containerPxW, containerPxH, result);
-        computeLayout(split.second, { 
-          x: bounds.x, 
-          y: bounds.y + bounds.h * split.ratio + divPy / 2, 
-          w: bounds.w, 
-          h: bounds.h - bounds.h * split.ratio - divPy / 2 
+        computeLayout(split.second, {
+          x: bounds.x,
+          y: bounds.y + bounds.h * split.ratio + divPy / 2,
+          w: bounds.w,
+          h: bounds.h - bounds.h * split.ratio - divPy / 2
         }, containerPxW, containerPxH, result);
       }
     }
@@ -180,7 +181,7 @@
   }
 </script>
 
-<div bind:this={containerEl} class="absolute inset-0 overflow-hidden">
+<div bind:this={containerEl} class="absolute inset-0 overflow-hidden" style="background:#1e1f22">
   {#each terminalIds as termId (termId)}
     {@const bounds = layoutMap.get(termId)}
     {#if bounds}
@@ -220,5 +221,6 @@
   .terminal-wrapper {
     background: #1e1f22;
     box-sizing: border-box;
+    overflow: hidden;
   }
 </style>
