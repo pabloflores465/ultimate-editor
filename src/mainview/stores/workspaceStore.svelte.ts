@@ -27,6 +27,7 @@ export interface ProjectState {
   rootName: string;
   fileNodes: FileNode[];
   rootPath: string;
+  fileMap: Map<string, File>; // Maps file paths to File objects for reading content
 }
 
 export interface WorkspaceState {
@@ -80,6 +81,7 @@ function createWorkspace(name: string): WorkspaceState {
       rootName: "No folder open",
       fileNodes: [],
       rootPath: "",
+      fileMap: new Map<string, File>(),
     },
   };
 }
@@ -224,7 +226,11 @@ class WorkspaceStore {
   updateProject(id: string, project: Partial<ProjectState>) {
     const ws = this.workspaces.find((w) => w.id === id);
     if (ws) {
+      // Preserve existing fileMap if not provided in update
       ws.project = { ...ws.project, ...project };
+      if (!ws.project.fileMap) {
+        ws.project.fileMap = new Map<string, File>();
+      }
     }
   }
 

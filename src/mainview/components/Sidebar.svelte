@@ -28,8 +28,15 @@
 
   let fileInput = $state<HTMLInputElement | null>(null);
   let isDragOver = $state(false);
-  const fileMap = new Map<string, File>();
   let selectedDirHandle: FileSystemDirectoryHandle | null = null;
+  
+  // Use fileMap from the workspace's project state
+  $effect(() => {
+    const ws = workspaceStore.workspaces.find(w => w.id === workspaceId);
+    if (ws && !ws.project.fileMap) {
+      ws.project.fileMap = new Map<string, File>();
+    }
+  });
 
   function getFileIcon(name: string): string {
     const ext = name.split(".").pop()?.toLowerCase() ?? "";
@@ -50,10 +57,23 @@
   }
 
   function buildTree(files: FileList): FileNode[] {
+    console.log("[buildTree] Building tree for workspace:", workspaceId, "files count:", files.length);
     const folderMap = new Map<string, FileNode[]>();
     folderMap.set("", []);
 
+    const ws = workspaceStore.workspaces.find(w => w.id === workspaceId);
+    if (!ws) {
+      console.error("[buildTree] Workspace not found:", workspaceId);
+      return [];
+    }
+    if (!ws.project.fileMap) {
+      console.log("[buildTree] Creating new fileMap for workspace");
+      ws.project.fileMap = new Map<string, File>();
+    }
+    const fileMap = ws.project.fileMap;
+    console.log("[buildTree] fileMap before clear, size:", fileMap.size);
     fileMap.clear();
+    console.log("[buildTree] fileMap cleared");
 
     const sorted = Array.from(files).sort((a, b) =>
       a.webkitRelativePath.localeCompare(b.webkitRelativePath),
@@ -101,15 +121,34 @@
   }
 
   async function handleFileOpen(path: string) {
-    if (!onFileOpen) return;
+    console.log("[handleFileOpen] Opening file:", path, "workspaceId:", workspaceId);
+    if (!onFileOpen) {
+      console.error("[handleFileOpen] No onFileOpen callback!");
+      return;
+    }
+    const ws = workspaceStore.workspaces.find(w => w.id === workspaceId);
+    console.log("[handleFileOpen] Found workspace:", ws?.id, "project:", ws?.project);
+    const fileMap = ws?.project?.fileMap;
+    console.log("[handleFileOpen] fileMap:", fileMap, "size:", fileMap?.size);
+    if (!fileMap) {
+      console.error("[handleFileOpen] No fileMap found for workspace", workspaceId);
+      return;
+    }
     const file = fileMap.get(path);
-    if (!file) return;
+    console.log("[handleFileOpen] File from map:", file);
+    if (!file) {
+      console.error("[handleFileOpen] File not found in map:", path);
+      console.log("[handleFileOpen] Available paths:", Array.from(fileMap.keys()));
+      return;
+    }
     try {
+      console.log("[handleFileOpen] Reading file content...");
       const content = await file.text();
+      console.log("[handleFileOpen] Content length:", content.length);
       const icon = getFileIcon(file.name);
       onFileOpen(path, file.name, icon, content);
     } catch (err) {
-      console.error("Failed to read file:", path, err);
+      console.error("[handleFileOpen] Failed to read file:", path, err);
     }
   }
 
@@ -227,17 +266,25 @@
         ondragleave={() => { isDragOver = false; }}
         ondrop={handleDrop}
       >
-        <svg viewBox="0 0 24 24" width="48" height="48" fill="none" stroke="currentColor" stroke-width="1" class="text-jb-muted opacity-40">
-          <path d="M3 7v13a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"/>
+        <svg viewBox="0 0 48 48" width="52" height="52" fill="none" stroke="#6b6f72" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="opacity-80">
+          <path d="M6 10h12l4 5h20a3 3 0 0 1 3 3v18a3 3 0 0 1-3 3H6a3 3 0 0 1-3-3V13a3 3 0 0 1 3-3z"/>
         </svg>
-        <div class="flex flex-col items-center gap-2">
-          <span class="text-[12px] text-jb-muted">No project open</span>
-          <button
-            onclick={openFolderDialog}
-            class="px-3 py-1.5 text-[11px] bg-jb-panel2 border border-jb-border rounded hover:bg-jb-hover text-jb-text cursor-pointer transition-colors"
-          >
-            Open Folder
-          </button>
+        <p class="text-[14px] font-medium text-jb-text2">No project open</p>
+        <button
+          class="flex items-center gap-2 px-4 py-2 text-[13px] text-jb-text bg-jb-panel border border-jb-border rounded hover:bg-jb-hover hover:border-jb-blue/50 transition-colors"
+          onclick={openFolderDialog}
+        >
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+          </svg>
+          <span>Open Folder</span>
+        </button>
+        <div class="flex items-center gap-2 text-[11px]" style="color:#5a5d5f">
+          <kbd class="px-1.5 py-0.5 bg-jb-panel2 border border-jb-border rounded text-[10px]">Ctrl</kbd>
+          +
+          <kbd class="px-1.5 py-0.5 bg-jb-panel2 border border-jb-border rounded text-[10px]">Shift</kbd>
+          +
+          <kbd class="px-1.5 py-0.5 bg-jb-panel2 border border-jb-border rounded text-[10px]">O</kbd>
         </div>
       </div>
     {:else}
