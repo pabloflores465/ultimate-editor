@@ -24,8 +24,10 @@ type AppSchema = {
       "terminal:ready": { workspaceId: string };
       /** Destroy terminal session when user closes a pane */
       "terminal:destroy": { workspaceId: string };
-      /** Execute a run command in the terminal */
-      "run:execute": { command: string; workspaceId: string };
+      /** Start a run command as a child process */
+      "run:start": { command: string; workspaceId: string; cwd?: string };
+      /** Stop the running process for a workspace */
+      "run:stop": { workspaceId: string };
       /** Set workspace root path for auto-cd on terminal creation */
       "workspace:setRootPath": { workspaceId: string; path: string };
       /** Get current working directory */
@@ -48,6 +50,10 @@ type AppSchema = {
       "terminal:output": { data: string; workspaceId: string };
       /** Shell process exited (e.g. user typed 'exit') */
       "terminal:exited": { workspaceId: string };
+      /** Run process output chunk */
+      "run:output": { data: string; workspaceId: string; stream: "stdout" | "stderr" };
+      /** Run process ended */
+      "run:ended": { workspaceId: string; exitCode: number | null };
       "menu:open-settings": Record<string, never>;
       "menu:new-file": Record<string, never>;
       "menu:open-file": { path: string };
@@ -73,6 +79,9 @@ const workspaceBuffers = new Map<string, string[]>();
 // yet when the first resize comes in.  We store it here and replay it once
 // the session is created in the terminal:ready handler.
 const pendingResize = new Map<string, { cols: number; rows: number }>();
+
+// Store running processes per workspace
+const runningProcesses = new Map<string, ReturnType<typeof Bun.spawn>>();
 
 // Store git root per workspace
 let currentGitRoot: string | null = null;
@@ -166,11 +175,70 @@ const rpc = BrowserView.defineRPC<AppSchema>({
         pendingResize.delete(workspaceId);
         destroyTerminal(workspaceId);
       },
-      "run:execute": ({ command, workspaceId }) => {
-        console.log(`[index.ts] run:execute received for ${workspaceId}: ${command}`);
-        // Encode command as PTY input (base64)
-        const b64 = Buffer.from(command + "\n").toString("base64");
-        writeToTty(workspaceId, b64);
+      "run:start": ({ command, workspaceId, cwd }) => {
+        console.log(`[index.ts] run:start received for ${workspaceId}: ${command}`);
+        // Kill any existing process for this workspace
+        const existing = runningProcesses.get(workspaceId);
+        if (existing) {
+          try { existing.kill(); } catch {}
+          runningProcesses.delete(workspaceId);
+        }
+
+        const parts = command.trim().split(/\s+/);
+        const runCwd = cwd ?? workspaceRootPaths.get(workspaceId) ?? process.cwd();
+
+        let proc: ReturnType<typeof Bun.spawn>;
+        try {
+          proc = Bun.spawn(parts, {
+            cwd: runCwd,
+            stdout: "pipe",
+            stderr: "pipe",
+            env: { ...process.env },
+          });
+        } catch (err) {
+          sendToWebview("run:output", { data: `Error: ${String(err)}\n`, workspaceId, stream: "stderr" });
+          sendToWebview("run:ended", { workspaceId, exitCode: null });
+          return;
+        }
+
+        runningProcesses.set(workspaceId, proc);
+
+        // Stream stdout
+        (async () => {
+          const reader = proc.stdout.getReader();
+          const dec = new TextDecoder();
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            sendToWebview("run:output", { data: dec.decode(value), workspaceId, stream: "stdout" });
+          }
+        })();
+
+        // Stream stderr
+        (async () => {
+          const reader = proc.stderr.getReader();
+          const dec = new TextDecoder();
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            sendToWebview("run:output", { data: dec.decode(value), workspaceId, stream: "stderr" });
+          }
+        })();
+
+        // Wait for exit
+        proc.exited.then((exitCode) => {
+          runningProcesses.delete(workspaceId);
+          sendToWebview("run:ended", { workspaceId, exitCode });
+        });
+      },
+      "run:stop": ({ workspaceId }) => {
+        console.log(`[index.ts] run:stop received for ${workspaceId}`);
+        const proc = runningProcesses.get(workspaceId);
+        if (proc) {
+          try { proc.kill(); } catch {}
+          runningProcesses.delete(workspaceId);
+          sendToWebview("run:ended", { workspaceId, exitCode: null });
+        }
       },
       "workspace:setRootPath": ({ workspaceId, path }) => {
         console.log(`[index.ts] workspace:setRootPath received: ${workspaceId} -> ${path}`);

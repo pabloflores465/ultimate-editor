@@ -43,6 +43,8 @@ export interface WorkspaceState {
   expandedFolders: Record<string, boolean>;
   activeRoute: string;
   selectedConfig: string;
+  runConfigs: string[];
+  isRunning: boolean;
   openTabs: EditorTab[];
   activeTabId: string | null;
   breakpoints: Record<string, number[]>;
@@ -67,6 +69,8 @@ function createWorkspace(name: string): WorkspaceState {
     },
     activeRoute: "/",
     selectedConfig: "bun run dev",
+    runConfigs: ["bun run dev", "bun run build", "bun run hmr"],
+    isRunning: false,
     openTabs: [],
     activeTabId: null,
     breakpoints: {},

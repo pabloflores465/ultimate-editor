@@ -235,7 +235,7 @@
             nodes={projectFileNodes}
             expandedFolders={expandedFolders}
             onToggleFolder={onToggleFolder}
-            onFileClick={handleFileOpen}
+            onFileOpen={handleFileOpen}
             activeTabPath={activeTabPath}
           />
         </div>

@@ -88,7 +88,7 @@
   let resizingBottom = $state(false);
   let runConfigOpen  = $state(false);
   let runEditOpen    = $state(false);
-  let runOutput      = $state<string[]>([]);
+  let runOutput      = $state<{ text: string; stream: "stdout" | "stderr" | "system" }[]>([]);
   let newConfig      = $state("");
   let hamburgerOpen  = $state(false);
   let toolbarOpen    = $state(true);
@@ -297,9 +297,6 @@
     else onUpdate({ activeBottom: id, bottomPanelOpen: true });
   }
 
-  // ── Run config ────────────────────────────────────────────
-  let runConfigs = $state(["bun run dev", "bun run build", "bun run hmr"]);
-
   // ── Window width tracking ─────────────────────────────
   let windowWidth  = $state(window.innerWidth);
   let navOverflows = $state(false);
@@ -361,7 +358,8 @@
         "terminal:resize": { cols: number; rows: number; workspaceId: string };
         "terminal:ready": { workspaceId: string };
         "terminal:destroy": { workspaceId: string };
-        "run:execute": { command: string; workspaceId: string };
+        "run:start": { command: string; workspaceId: string; cwd?: string };
+        "run:stop": { workspaceId: string };
         "workspace:setRootPath": { workspaceId: string; path: string };
       };
     };
@@ -370,6 +368,8 @@
       messages: {
         "terminal:output": { data: string; workspaceId: string };
         "terminal:exited": { workspaceId: string };
+        "run:output": { data: string; workspaceId: string; stream: "stdout" | "stderr" };
+        "run:ended": { workspaceId: string; exitCode: number | null };
         "menu:open-settings": Record<string, never>;
         "menu:new-file": Record<string, never>;
         "menu:open-file": Record<string, never>;
@@ -424,6 +424,18 @@
           if (tiling.isClosing(termId)) return;
           terminalWriteFns.delete(termId);
           const result = tiling.close(termId, ws.id);
+        },
+        "run:output": ({ data, workspaceId, stream }) => {
+          if (workspaceId !== ws.id) return;
+          runOutput = [...runOutput, { text: data, stream }];
+        },
+        "run:ended": ({ workspaceId, exitCode }) => {
+          if (workspaceId !== ws.id) return;
+          onUpdate({ isRunning: false });
+          const msg = exitCode === null
+            ? "Process stopped."
+            : `Process exited with code ${exitCode}.`;
+          runOutput = [...runOutput, { text: msg + "\n", stream: "system" }];
         },
         "menu:open-settings": () => { /* TODO */ },
         "menu:new-file":      () => { /* TODO */ },
@@ -488,7 +500,16 @@
   }
   function handleRunExecute(command: string) {
     console.log(`[EditorLayout] handleRunExecute: ${command}`);
-    termRpc.send["run:execute"]({ command, workspaceId: ws.id });
+    runOutput = [{ text: `$ ${command}\n`, stream: "system" }];
+    onUpdate({ isRunning: true, activeBottom: "run", bottomPanelOpen: true });
+    termRpc.send["run:start"]({
+      command,
+      workspaceId: ws.id,
+      cwd: ws.project.rootPath || undefined,
+    });
+  }
+  function handleRunStop() {
+    termRpc.send["run:stop"]({ workspaceId: ws.id });
   }
   function handleTermMounted(termId: string, writeFn: (b64: string) => void) {
     if (tiling.isClosing(termId)) return;
@@ -654,7 +675,7 @@
       </button>
       {#if runConfigOpen}
         <div class="absolute top-full left-0 mt-px bg-jb-panel border border-jb-border rounded shadow-lg z-50 py-1 min-w-[200px]">
-          {#each runConfigs as cfg}
+          {#each ws.runConfigs as cfg}
             <button
               class="w-full text-left px-3 py-1.5 text-[12px] text-jb-text hover:bg-jb-select flex items-center gap-2"
               onclick={() => { onUpdate({ selectedConfig: cfg }); runConfigOpen = false; }}
@@ -678,12 +699,13 @@
     <!-- Run -->
     <button
       title="Run '{ws.selectedConfig}' (⌘R)"
-      onclick={() => { onUpdate({ activeBottom: "run", bottomPanelOpen: true }); handleRunExecute(ws.selectedConfig); }}
+      onclick={() => handleRunExecute(ws.selectedConfig)}
       class="flex items-center justify-center w-[28px] h-[28px] rounded hover:bg-jb-hover"
+      disabled={ws.isRunning}
     >
       <svg viewBox="0 0 16 16" width="16" height="16" fill="none">
-        <circle cx="8" cy="8" r="7" fill="#629755" opacity="0.15"/>
-        <polygon points="5.5,4 12.5,8 5.5,12" fill="#629755"/>
+        <circle cx="8" cy="8" r="7" fill="#629755" opacity={ws.isRunning ? 0.05 : 0.15}/>
+        <polygon points="5.5,4 12.5,8 5.5,12" fill={ws.isRunning ? "#629755" : "#629755"} opacity={ws.isRunning ? 0.4 : 1}/>
       </svg>
     </button>
 
@@ -700,7 +722,13 @@
     </button>
 
     <!-- Stop -->
-    <button title="Stop (⌘F2)" class="flex items-center justify-center w-[28px] h-[28px] rounded hover:bg-jb-hover opacity-40 hover:opacity-70">
+    <button
+      title="Stop (⌘F2)"
+      onclick={() => handleRunStop()}
+      class="flex items-center justify-center w-[28px] h-[28px] rounded hover:bg-jb-hover"
+      class:opacity-30={!ws.isRunning}
+      class:pointer-events-none={!ws.isRunning}
+    >
       <svg viewBox="0 0 16 16" width="14" height="14">
         <rect x="4" y="4" width="8" height="8" rx="1" fill="#ff6b68"/>
       </svg>
@@ -1400,12 +1428,12 @@
                   <div class="flex-1 overflow-y-auto px-3 py-3">
                     <div class="text-[12px] text-jb-text mb-3">Current configurations:</div>
                     <div class="space-y-2">
-                      {#each runConfigs as cfg, i}
+                      {#each ws.runConfigs as cfg, i}
                         <div class="flex items-center gap-2">
                           <svg viewBox="0 0 12 12" width="10" height="10" fill="#629755"><polygon points="2,1 10,6 2,11"/></svg>
                           <span class="flex-1 text-[12px] text-jb-text font-mono">{cfg}</span>
                           <button
-                            onclick={() => { runConfigs = runConfigs.filter((_, idx) => idx !== i); }}
+                            onclick={() => { onUpdate({ runConfigs: ws.runConfigs.filter((_, idx) => idx !== i) }); }}
                             class="px-1.5 py-0.5 rounded text-[10px] bg-red-500/20 text-red-400 hover:bg-red-500/30 border-none cursor-pointer"
                           >Remove</button>
                         </div>
@@ -1418,9 +1446,10 @@
                           bind:value={newConfig}
                           placeholder="e.g., bun run dev"
                           class="flex-1 px-2 py-1 text-[12px] bg-jb-panel border border-jb-border rounded text-jb-text placeholder:text-jb-muted focus:outline-none focus:border-jb-blue"
+                          onkeydown={(e) => { if (e.key === "Enter" && newConfig.trim()) { onUpdate({ runConfigs: [...ws.runConfigs, newConfig.trim()] }); newConfig = ""; } }}
                         />
                         <button
-                          onclick={() => { if (newConfig.trim()) { runConfigs = [...runConfigs, newConfig.trim()]; newConfig = ""; } }}
+                          onclick={() => { if (newConfig.trim()) { onUpdate({ runConfigs: [...ws.runConfigs, newConfig.trim()] }); newConfig = ""; } }}
                           class="px-2 py-1 rounded text-[11px] bg-jb-green/20 text-jb-green hover:bg-jb-green/30 border-none cursor-pointer"
                         >Add</button>
                       </div>
@@ -1482,12 +1511,23 @@
               {:else if ws.activeBottom === "run"}
                 <div class="flex-1 flex flex-col min-h-0 overflow-hidden">
                   <div class="flex items-center gap-2 bg-jb-panel h-[26px] border-b border-jb-border flex-shrink-0 px-3 text-[11px] text-jb-muted">
-                    <svg viewBox="0 0 12 12" width="10" height="10" fill="#629755"><polygon points="2,1 10,6 2,11"/></svg>
+                    {#if ws.isRunning}
+                      <span class="inline-block w-2 h-2 rounded-full bg-green-500 animate-pulse flex-shrink-0"></span>
+                    {:else}
+                      <svg viewBox="0 0 12 12" width="10" height="10" fill="#629755"><polygon points="2,1 10,6 2,11"/></svg>
+                    {/if}
                     <span class="text-jb-text">{ws.selectedConfig}</span>
-                    <button
-                      onclick={() => { runOutput = []; handleRunExecute(ws.selectedConfig); }}
-                      class="ml-2 px-1.5 py-0.5 rounded text-[10px] bg-jb-green/20 text-jb-green hover:bg-jb-green/30 border-none cursor-pointer"
-                    >Run Again</button>
+                    {#if ws.isRunning}
+                      <button
+                        onclick={() => handleRunStop()}
+                        class="ml-2 px-1.5 py-0.5 rounded text-[10px] bg-red-500/20 text-red-400 hover:bg-red-500/30 border-none cursor-pointer"
+                      >Stop</button>
+                    {:else}
+                      <button
+                        onclick={() => handleRunExecute(ws.selectedConfig)}
+                        class="ml-2 px-1.5 py-0.5 rounded text-[10px] bg-jb-green/20 text-jb-green hover:bg-jb-green/30 border-none cursor-pointer"
+                      >Run Again</button>
+                    {/if}
                     <button
                       onclick={() => { onUpdate({ activeBottom: "terminal" }); }}
                       class="ml-auto px-1.5 py-0.5 rounded text-[10px] bg-jb-border/50 text-jb-muted hover:bg-jb-border hover:text-jb-text border-none cursor-pointer"
@@ -1496,11 +1536,16 @@
                   <div class="flex-1 overflow-y-auto px-3 py-2 font-mono text-[12px] leading-relaxed bg-jb-bg">
                     {#if runOutput.length > 0}
                       {#each runOutput as line}
-                        <div class="text-jb-text whitespace-pre-wrap">{line}</div>
+                        <div
+                          class="whitespace-pre-wrap"
+                          class:text-jb-text={line.stream === "stdout"}
+                          class:text-red-400={line.stream === "stderr"}
+                          class:text-jb-muted={line.stream === "system"}
+                        >{line.text}</div>
                       {/each}
                     {:else}
                       <div class="text-jb-muted text-[12px] italic">
-                        Click "Run" or "Run Again" to execute: <span class="text-jb-text">{ws.selectedConfig}</span>
+                        Click "Run" to execute: <span class="text-jb-text">{ws.selectedConfig}</span>
                       </div>
                       <div class="mt-3 text-jb-muted text-[11px]">
                         Configure run commands in the toolbar dropdown.
