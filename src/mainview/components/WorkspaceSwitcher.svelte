@@ -80,10 +80,12 @@
   function onZoneDrop(e: DragEvent, zone: "left" | "right" | "top" | "bottom") {
     e.preventDefault();
     const idx = workspaceStore.tilingDragWsIdx;
-    if (idx !== null) {
+    // Validate: dragged workspace must exist and be different from active
+    if (idx !== null && idx < workspaceStore.workspaces.length && idx !== workspaceStore.activeIndex) {
       workspaceStore.placeTiledWorkspace(idx, zone);
     }
     dropZoneHover = null;
+    workspaceStore.tilingDragWsIdx = null;
   }
 
   function onZoneDragLeave() {
@@ -483,6 +485,41 @@
   {@const layout = workspaceStore.tilingLayout}
   {@const [ratioCol, ratioRow] = workspaceStore.tilingSplitRatio}
   <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
+  {@const tileColors = ["#4e7bf0", "#e06c75", "#e5c07b", "#56b6c2"]}
+  {#snippet tilePane(wsIdx: number, tileIdx: number, flexVal?: string)}
+    {@const tileWs = workspaceStore.workspaces[wsIdx]}
+    <div
+      class="ws-tile"
+      class:ws-tile--focused={workspaceStore.tiledFocus === tileIdx}
+      style:flex={flexVal ?? undefined}
+      style:--tile-color={tileColors[tileIdx % tileColors.length]}
+      role="button"
+      tabindex="0"
+      onclick={() => workspaceStore.focusTile(tileIdx)}
+      onkeydown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); workspaceStore.focusTile(tileIdx); } }}
+    >
+      <div class="ws-tile-badge" style:background={tileColors[tileIdx % tileColors.length]}>
+        <span class="ws-tile-badge-num">{tileIdx + 1}</span>
+      </div>
+      <button
+        class="ws-tile-close"
+        title="Close this tile"
+        onclick={(e) => { e.stopPropagation(); workspaceStore.removeTile(tileIdx); }}
+      >
+        <svg viewBox="0 0 10 10" width="9" height="9" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+          <line x1="2" y1="2" x2="8" y2="8"/><line x1="8" y1="2" x2="2" y2="8"/>
+        </svg>
+      </button>
+      <EditorLayout
+        ws={tileWs}
+        onUpdate={(patch) => workspaceStore.updateWorkspace(wsIdx, patch)}
+        onOpenOverview={() => workspaceStore.toggleOverview()}
+      >
+        {@render children()}
+      </EditorLayout>
+    </div>
+  {/snippet}
+
   <div
     class="ws-tiled"
     style:display={layout === "quarter" ? "grid" : "flex"}
@@ -491,34 +528,39 @@
     style:flex-direction={layout === "hsplit" ? "column" : "row"}
     style:cursor={tilingResizing === "col" ? "col-resize" : tilingResizing === "row" ? "row-resize" : undefined}
   >
-    {#each workspaceStore.tiledIndices as wsIdx, tileIdx}
-      {@const tileWs = workspaceStore.workspaces[wsIdx]}
-      {#if tileIdx === 1 && (layout === "vsplit" || layout === "hsplit")}
+    {#if layout === "triple"}
+      <!-- Triple: left pane full-height + right column with 2 stacked -->
+      {@render tilePane(workspaceStore.tiledIndices[0], 0, `${ratioCol} 1 0%`)}
+      <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+      <div
+        class="ws-tile-divider ws-tile-divider--col"
+        role="separator"
+        onmousedown={(e) => onTilingResizeStart("col", e)}
+      ></div>
+      <div class="ws-tile-col" style:flex="{1 - ratioCol} 1 0%">
+        {@render tilePane(workspaceStore.tiledIndices[1], 1, `${ratioRow} 1 0%`)}
         <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
         <div
-          class="ws-tile-divider {layout === 'vsplit' ? 'ws-tile-divider--col' : 'ws-tile-divider--row'}"
+          class="ws-tile-divider ws-tile-divider--row"
           role="separator"
-          onmousedown={(e) => onTilingResizeStart(layout === "vsplit" ? "col" : "row", e)}
+          onmousedown={(e) => onTilingResizeStart("row", e)}
         ></div>
-      {/if}
-      <div
-        class="ws-tile"
-        class:ws-tile--focused={workspaceStore.tiledFocus === tileIdx}
-        style:flex={layout !== "quarter" ? (tileIdx === 0 ? `${layout === "vsplit" ? ratioCol : ratioRow} 1 0%` : `${layout === "vsplit" ? 1 - ratioCol : 1 - ratioRow} 1 0%`) : undefined}
-        role="button"
-        tabindex="0"
-        onclick={() => workspaceStore.focusTile(tileIdx)}
-        onkeydown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); workspaceStore.focusTile(tileIdx); } }}
-      >
-        <EditorLayout
-          ws={tileWs}
-          onUpdate={(patch) => workspaceStore.updateWorkspace(wsIdx, patch)}
-          onOpenOverview={() => workspaceStore.toggleOverview()}
-        >
-          {@render children()}
-        </EditorLayout>
+        {@render tilePane(workspaceStore.tiledIndices[2], 2, `${1 - ratioRow} 1 0%`)}
       </div>
-    {/each}
+    {:else}
+      <!-- vsplit / hsplit / quarter — generic loop -->
+      {#each workspaceStore.tiledIndices as wsIdx, tileIdx}
+        {#if tileIdx === 1 && (layout === "vsplit" || layout === "hsplit")}
+          <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+          <div
+            class="ws-tile-divider {layout === 'vsplit' ? 'ws-tile-divider--col' : 'ws-tile-divider--row'}"
+            role="separator"
+            onmousedown={(e) => onTilingResizeStart(layout === "vsplit" ? "col" : "row", e)}
+          ></div>
+        {/if}
+        {@render tilePane(wsIdx, tileIdx, layout !== "quarter" ? (tileIdx === 0 ? `${layout === "vsplit" ? ratioCol : ratioRow} 1 0%` : `${layout === "vsplit" ? 1 - ratioCol : 1 - ratioRow} 1 0%`) : undefined)}
+      {/each}
+    {/if}
     {#if layout === "quarter"}
       <!-- Overlay dividers for quarter layout -->
       <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
@@ -582,63 +624,96 @@
 
 <!-- Tiling drop-zone overlay (shown while dragging a workspace tab) -->
 {#if workspaceStore.tilingDragWsIdx !== null}
+  {@const dragIdx = workspaceStore.tilingDragWsIdx}
+  {@const dragWs = workspaceStore.workspaces[dragIdx]}
+  {@const baseIdx = workspaceStore.activeIndex}
+  {@const baseWs = workspaceStore.active}
+  {@const dragNum = dragIdx + 1}
+  {@const baseNum = baseIdx + 1}
+  {@const canDrop = dragIdx !== baseIdx && dragIdx < workspaceStore.workspaces.length}
   <!-- svelte-ignore a11y_no_static_element_interactions -->
-  <div class="tile-drop-overlay">
+  <div class="tile-drop-overlay" class:tile-drop-overlay--blocked={!canDrop}>
     <!-- LEFT zone -->
     <div
       class="tile-zone tile-zone--left"
-      class:tile-zone--active={dropZoneHover === "left"}
+      class:tile-zone--active={dropZoneHover === "left" && canDrop}
+      class:tile-zone--blocked={!canDrop}
       ondragover={(e) => onZoneDragOver(e, "left")}
       ondragleave={onZoneDragLeave}
       ondrop={(e) => onZoneDrop(e, "left")}
     >
       <div class="tile-zone-preview tile-zone-preview--left">
-        <div class="tzp-a tzp-accent"></div>
-        <div class="tzp-b"></div>
+        <div class="tzp-a tzp-accent"><span class="tzp-num">{dragNum}</span></div>
+        <div class="tzp-b"><span class="tzp-num">{baseNum}</span></div>
       </div>
+      {#if dropZoneHover === "left" && canDrop}
+        <div class="tile-zone-label">{dragWs?.name} | {baseWs?.name}</div>
+      {/if}
     </div>
 
     <!-- RIGHT zone -->
     <div
       class="tile-zone tile-zone--right"
-      class:tile-zone--active={dropZoneHover === "right"}
+      class:tile-zone--active={dropZoneHover === "right" && canDrop}
+      class:tile-zone--blocked={!canDrop}
       ondragover={(e) => onZoneDragOver(e, "right")}
       ondragleave={onZoneDragLeave}
       ondrop={(e) => onZoneDrop(e, "right")}
     >
       <div class="tile-zone-preview tile-zone-preview--right">
-        <div class="tzp-a"></div>
-        <div class="tzp-b tzp-accent"></div>
+        <div class="tzp-a"><span class="tzp-num">{baseNum}</span></div>
+        <div class="tzp-b tzp-accent"><span class="tzp-num">{dragNum}</span></div>
       </div>
+      {#if dropZoneHover === "right" && canDrop}
+        <div class="tile-zone-label">{baseWs?.name} | {dragWs?.name}</div>
+      {/if}
     </div>
 
     <!-- TOP zone -->
     <div
       class="tile-zone tile-zone--top"
-      class:tile-zone--active={dropZoneHover === "top"}
+      class:tile-zone--active={dropZoneHover === "top" && canDrop}
+      class:tile-zone--blocked={!canDrop}
       ondragover={(e) => onZoneDragOver(e, "top")}
       ondragleave={onZoneDragLeave}
       ondrop={(e) => onZoneDrop(e, "top")}
     >
       <div class="tile-zone-preview tile-zone-preview--top">
-        <div class="tzp-a tzp-accent"></div>
-        <div class="tzp-b"></div>
+        <div class="tzp-a tzp-accent"><span class="tzp-num">{dragNum}</span></div>
+        <div class="tzp-b"><span class="tzp-num">{baseNum}</span></div>
       </div>
+      {#if dropZoneHover === "top" && canDrop}
+        <div class="tile-zone-label">{dragWs?.name} / {baseWs?.name}</div>
+      {/if}
     </div>
 
     <!-- BOTTOM zone -->
     <div
       class="tile-zone tile-zone--bottom"
-      class:tile-zone--active={dropZoneHover === "bottom"}
+      class:tile-zone--active={dropZoneHover === "bottom" && canDrop}
+      class:tile-zone--blocked={!canDrop}
       ondragover={(e) => onZoneDragOver(e, "bottom")}
       ondragleave={onZoneDragLeave}
       ondrop={(e) => onZoneDrop(e, "bottom")}
     >
       <div class="tile-zone-preview tile-zone-preview--bottom">
-        <div class="tzp-a"></div>
-        <div class="tzp-b tzp-accent"></div>
+        <div class="tzp-a"><span class="tzp-num">{baseNum}</span></div>
+        <div class="tzp-b tzp-accent"><span class="tzp-num">{dragNum}</span></div>
       </div>
+      {#if dropZoneHover === "bottom" && canDrop}
+        <div class="tile-zone-label">{baseWs?.name} / {dragWs?.name}</div>
+      {/if}
     </div>
+
+    {#if !canDrop}
+      <div class="tile-drop-blocked-msg">
+        {#if dragIdx === baseIdx}
+          Cannot tile a workspace with itself
+        {:else}
+          Workspace does not exist
+        {/if}
+      </div>
+    {/if}
   </div>
 {/if}
 
@@ -691,6 +766,7 @@
     position: absolute;
     pointer-events: all;
     display: flex;
+    flex-direction: column;
     align-items: center;
     justify-content: center;
     opacity: 0.55;
@@ -762,6 +838,75 @@
   .tzp-accent {
     background: #4e7bf0 !important;
     opacity: 0.85;
+  }
+
+  /* Workspace number badge inside each preview pane */
+  .tzp-num {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    height: 100%;
+    font-size: 9px;
+    font-weight: 700;
+    font-family: system-ui, -apple-system, sans-serif;
+    color: rgba(255, 255, 255, 0.9);
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+    line-height: 1;
+  }
+
+  .tzp-b .tzp-num {
+    color: rgba(255, 255, 255, 0.5);
+  }
+
+  .tzp-accent .tzp-num {
+    color: rgba(255, 255, 255, 0.95);
+  }
+
+  /* Label showing workspace names on hover */
+  .tile-zone-label {
+    position: absolute;
+    bottom: 12px;
+    left: 50%;
+    transform: translateX(-50%);
+    padding: 3px 8px;
+    background: rgba(30, 31, 34, 0.92);
+    border: 1px solid rgba(78, 155, 222, 0.4);
+    border-radius: 4px;
+    font-size: 10px;
+    color: #bbbec4;
+    white-space: nowrap;
+    backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
+    pointer-events: none;
+  }
+
+  /* Blocked state — can't drop (same workspace or doesn't exist) */
+  .tile-zone--blocked {
+    opacity: 0.2 !important;
+    cursor: not-allowed;
+  }
+
+  .tile-drop-overlay--blocked {
+    cursor: not-allowed;
+  }
+
+  .tile-drop-blocked-msg {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    padding: 8px 16px;
+    background: rgba(30, 31, 34, 0.95);
+    border: 1.5px solid rgba(255, 80, 80, 0.5);
+    border-radius: 8px;
+    font-size: 12px;
+    color: #ff6b6b;
+    font-weight: 500;
+    white-space: nowrap;
+    pointer-events: none;
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
   }
 
 </style>
