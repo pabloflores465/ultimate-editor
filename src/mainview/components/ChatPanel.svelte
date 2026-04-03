@@ -581,24 +581,24 @@
       <button
         onclick={triggerFileUpload}
         disabled={isStreaming}
-        class="flex items-center gap-1 px-2 py-1 text-[10px] text-jb-muted hover:text-jb-text bg-jb-panel2 hover:bg-jb-hover rounded border border-jb-border cursor-pointer disabled:opacity-40"
+        title="Attach File"
+        class="w-7 h-7 flex items-center justify-center rounded text-jb-muted hover:text-jb-text hover:bg-jb-hover bg-jb-panel2 border border-jb-border cursor-pointer disabled:opacity-40"
       >
-        <svg viewBox="0 0 12 12" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1">
-          <path d="M6 1v10M3 4l3-3 3 3"/>
+        <svg viewBox="0 0 14 14" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5">
+          <path d="M7 1.5v11M2.5 7l4.5-4.5 4.5 4.5"/>
         </svg>
-        Attach File
       </button>
       <button
         onclick={triggerImageUpload}
         disabled={isStreaming}
-        class="flex items-center gap-1 px-2 py-1 text-[10px] text-jb-muted hover:text-jb-text bg-jb-panel2 hover:bg-jb-hover rounded border border-jb-border cursor-pointer disabled:opacity-40"
+        title="Add Image"
+        class="w-7 h-7 flex items-center justify-center rounded text-jb-muted hover:text-jb-text hover:bg-jb-hover bg-jb-panel2 border border-jb-border cursor-pointer disabled:opacity-40"
       >
-        <svg viewBox="0 0 12 12" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1">
-          <rect x="1" y="2" width="10" height="8" rx="1"/>
-          <circle cx="6" cy="6" r="2"/>
-          <path d="M2 9l3-3 2 2 3-3"/>
+        <svg viewBox="0 0 14 14" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5">
+          <rect x="1.5" y="2.5" width="11" height="9" rx="1"/>
+          <circle cx="7" cy="7" r="2"/>
+          <path d="M2 10l3.5-3.5 2 2 3-3"/>
         </svg>
-        Add Image
       </button>
     </div>
   </div>

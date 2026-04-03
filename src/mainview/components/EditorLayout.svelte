@@ -120,16 +120,16 @@
 
     // Use setTimeout to allow UI update and show loading screen
     setTimeout(() => {
-      const fileNodes = buildFileTree(files);
+      const { fileNodes, fileMap } = buildFileTree(files);
 
       // Set a temporary root path with the folder name
       const tempPath = `/${rootName}`;
 
-      console.log(`[EditorLayout] handleFolderSelect: rootName=${rootName}, fileNodes.length=${fileNodes.length}`);
-      workspaceStore.updateProject(ws.id, { rootName, fileNodes });
+      console.log(`[EditorLayout] handleFolderSelect: rootName=${rootName}, fileNodes.length=${fileNodes.length}, fileMap.size=${fileMap.size}`);
+      workspaceStore.updateProject(ws.id, { rootName, fileNodes, fileMap });
       workspaceStore.setRootPath(ws.id, tempPath);
       workspaceStore.updateActive({ isLoadingProject: false });
-      console.log(`[EditorLayout] After update: ws.id=${ws.id}, project set`);
+      console.log(`[EditorLayout] After update: ws.id=${ws.id}, project set with fileMap.size=${fileMap.size}`);
 
       // Trigger backend to get absolute folder path
       window.dispatchEvent(new CustomEvent('ultimate:folder-selected', { detail: { workspaceId: ws.id } }));
@@ -138,9 +138,10 @@
     }, 100);
   }
 
-  function buildFileTree(files: FileList): any[] {
+  function buildFileTree(files: FileList): { fileNodes: any[]; fileMap: Map<string, File> } {
     const folderMap = new Map<string, any[]>();
     folderMap.set("", []);
+    const fileMap = new Map<string, File>();
 
     const sorted = Array.from(files).sort((a, b) =>
       a.webkitRelativePath.localeCompare(b.webkitRelativePath),
@@ -173,6 +174,9 @@
 
       const filePath = parts.slice(1).join("/");
 
+      // Save file to fileMap for later reading
+      fileMap.set(filePath, file);
+
       parentChildren.push({
         name: fileName,
         type: "file" as const,
@@ -182,7 +186,7 @@
       });
     }
 
-    return folderMap.get("")!;
+    return { fileNodes: folderMap.get("")!, fileMap };
   }
 
   function getFileIcon(name: string): string {
