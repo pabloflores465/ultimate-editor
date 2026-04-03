@@ -1037,27 +1037,8 @@
     <div class="flex-1 flex flex-col min-w-0 min-h-0 overflow-hidden">
     {#if mode === "editor"}
 
-      <!-- Navigation Bar (breadcrumb) -->
-      {#if hasProject}
-      <div class="flex items-center h-[26px] bg-jb-panel border-b border-jb-border flex-shrink-0 px-3 gap-1 text-[12px] overflow-hidden">
-        <svg viewBox="0 0 12 12" width="12" height="12" fill="#4e9ede" class="flex-shrink-0">
-          <rect x="0.5" y="1.5" width="11" height="9" rx="1"/><rect x="0.5" y="1.5" width="5" height="3" rx="1" fill="#6aaddc"/>
-        </svg>
-        {#if activeTab}
-          {#each activeTab.path.split("/") as part, i}
-            {#if i < activeTab.path.split("/").length - 1}
-              <span class="text-jb-muted whitespace-nowrap">{part}</span>
-              <span class="text-jb-dim flex-shrink-0">›</span>
-            {:else}
-              <span class="text-jb-text font-medium whitespace-nowrap">{part}</span>
-            {/if}
-          {/each}
-        {:else}
-          <span class="text-jb-muted">ultimate_editor</span>
-        {/if}
-      </div>
-
       <!-- ── EDITOR TABS (from workspaceStore) ── -->
+      {#if hasProject}
       <div class="flex items-end bg-jb-panel border-b border-jb-border flex-shrink-0 overflow-x-auto min-h-[32px]">
         {#each ws.openTabs as tab (tab.id)}
           <div
@@ -1114,6 +1095,24 @@
           <button title="Recent Files (⌘E)" class="w-6 h-6 flex items-center justify-center rounded text-jb-muted hover:bg-jb-hover hover:text-jb-text bg-transparent border-none cursor-pointer text-[11px]">⊠</button>
         </div>
       </div>
+
+      <!-- Breadcrumb path bar -->
+      {#if activeTab}
+      {@const rootPath = ws.project.rootPath}
+      {@const rootName = rootPath ? rootPath.split("/").filter(p => p.length > 0).at(-1) ?? "" : ""}
+      {@const relPath = rootPath && activeTab.path.startsWith(rootPath) ? activeTab.path.slice(rootPath.endsWith("/") ? rootPath.length : rootPath.length + 1) : activeTab.path}
+      {@const parts = rootName ? [rootName, ...relPath.split("/").filter(p => p.length > 0)] : relPath.split("/").filter(p => p.length > 0)}
+      <div class="flex items-center h-[22px] bg-jb-bg border-b border-jb-border flex-shrink-0 px-2 gap-1 text-[11px] overflow-x-auto overflow-y-hidden" style="scrollbar-width:none">
+        {#each parts as part, i}
+          {#if i < parts.length - 1}
+            <span class="text-jb-muted whitespace-nowrap hover:text-jb-text cursor-pointer flex-shrink-0">{part}</span>
+            <span class="text-jb-dim flex-shrink-0 text-[10px]">›</span>
+          {:else}
+            <span class="text-jb-text2 whitespace-nowrap flex-shrink-0">{part}</span>
+          {/if}
+        {/each}
+      </div>
+      {/if}
       {/if}
 
       <!-- ── EDITOR AREA ── -->
