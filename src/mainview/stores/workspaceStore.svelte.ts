@@ -221,7 +221,9 @@ class WorkspaceStore {
 
   updateProject(id: string, project: Partial<ProjectState>) {
     const ws = this.workspaces.find((w) => w.id === id);
-    if (ws) Object.assign(ws.project, project);
+    if (ws) {
+      ws.project = { ...ws.project, ...project };
+    }
   }
 
   updateActive(patch: Partial<WorkspaceState>) {

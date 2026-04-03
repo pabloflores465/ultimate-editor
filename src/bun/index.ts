@@ -260,6 +260,15 @@ const rpc = BrowserView.defineRPC<AppSchema>({
         console.log(`[index.ts] get-cwd: ${cwd}`);
         sendToWebview("get-cwd", { cwd });
       },
+      "folder:pick": ({ workspaceId }) => {
+        console.log(`[index.ts] folder:pick received for ${workspaceId}`);
+        const dialog = require("node:fs").readdirSync;
+        // For now, just use INITIAL_CWD as the folder path
+        // In production, this would open a native folder picker dialog
+        const folderPath = process.env.INITIAL_CWD || process.cwd();
+        console.log(`[index.ts] Sending folder:picked with path: ${folderPath}`);
+        sendToWebview("folder:picked", { workspaceId, path: folderPath, name: folderPath.split("/").pop() || "Project", cancelled: false });
+      },
       "git:open": async ({ path }) => {
         console.log(`[index.ts] git:open received for ${path}`);
         const gitRoot = await git.openRepository(path);

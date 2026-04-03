@@ -82,6 +82,10 @@
     onOpenOverview: () => void;
   } = $props();
 
+  $effect(() => {
+    console.log(`[EditorLayout] ws prop changed: ws.id=${ws?.id}, fileNodes.length=${ws?.project?.fileNodes?.length || 0}`);
+  });
+
   // ── Transient UI state (not persisted per workspace) ─────────
   let resizingLeft   = $state(false);
   let resizingRight  = $state(false);
@@ -209,6 +213,10 @@
 
   let hasProject = $derived(ws.project.fileNodes.length > 0);
 
+  $effect(() => {
+    console.log(`[EditorLayout] hasProject changed: ${hasProject}, fileNodes.length: ${ws.project.fileNodes.length}, rootPath: ${ws.project.rootPath}`);
+  });
+
   // ── Git integration ─────────────────────────────────────────
   $effect(() => {
     if (ws.project.rootPath) {
@@ -265,8 +273,19 @@
         saveCurrentFile();
       }
     }
+
+    function handleFolderSelected(e: Event) {
+      const customEvent = e as CustomEvent<{ workspaceId: string }>;
+      console.log(`[EditorLayout] folder-selected event received for ${customEvent.detail.workspaceId}`);
+      termRpc.send["folder:pick"]({ workspaceId: customEvent.detail.workspaceId });
+    }
+
     window.addEventListener("keydown", handleKey);
-    return () => window.removeEventListener("keydown", handleKey);
+    window.addEventListener("ultimate:folder-selected", handleFolderSelected);
+    return () => {
+      window.removeEventListener("keydown", handleKey);
+      window.removeEventListener("ultimate:folder-selected", handleFolderSelected);
+    };
   });
 
   // ── Left tool strip ───────────────────────────────────────
@@ -467,11 +486,15 @@
         },
         "folder:picked": (data: { workspaceId: string; path: string; name: string; cancelled: boolean }) => {
           console.log(`[EditorLayout] folder:picked received: ${data.path}`);
-          if (!data.cancelled && data.path && (data.path.startsWith('/') || /^[A-Za-z]:/.test(data.path))) {
-            // Update store with absolute path
+          if (!data.cancelled && data.path) {
+            // Update store with path (can be absolute or relative)
             workspaceStore.setRootPath(ws.id, data.path);
             // Send to backend for auto-cd when terminal is created
             termRpc.send["workspace:setRootPath"]({ workspaceId: ws.id, path: data.path });
+            // Also trigger git:open to get proper git status if it's a git repo
+            if (data.path.startsWith('/') || /^[A-Za-z]:/.test(data.path)) {
+              termRpc.send["git:open"]({ path: data.path });
+            }
           }
         },
       },
@@ -664,8 +687,9 @@
     <!-- Run config dropdown -->
     <div class="relative flex items-center">
       <button
-        class="flex items-center gap-1.5 px-2.5 py-1 bg-jb-panel2 border border-jb-border rounded text-[12px] text-jb-text hover:bg-jb-hover h-[26px] min-w-[160px] justify-between"
+        class="flex items-center gap-1.5 px-2.5 py-1 bg-jb-panel2 border border-jb-border rounded text-[12px] text-jb-text hover:bg-jb-hover h-[26px] min-w-[160px] justify-between disabled:opacity-40 disabled:cursor-not-allowed"
         onclick={() => runConfigOpen = !runConfigOpen}
+        disabled={!hasProject}
       >
         <span class="flex items-center gap-1.5">
           <svg viewBox="0 0 12 12" width="12" height="12" fill="#629755"><polygon points="2,1 10,6 2,11"/></svg>
@@ -700,8 +724,8 @@
     <button
       title="Run '{ws.selectedConfig}' (⌘R)"
       onclick={() => handleRunExecute(ws.selectedConfig)}
-      class="flex items-center justify-center w-[28px] h-[28px] rounded hover:bg-jb-hover"
-      disabled={ws.isRunning}
+      class="flex items-center justify-center w-[28px] h-[28px] rounded hover:bg-jb-hover disabled:opacity-40 disabled:cursor-not-allowed"
+      disabled={ws.isRunning || !ws.rootPath}
     >
       <svg viewBox="0 0 16 16" width="16" height="16" fill="none">
         <circle cx="8" cy="8" r="7" fill="#629755" opacity={ws.isRunning ? 0.05 : 0.15}/>
@@ -710,7 +734,7 @@
     </button>
 
     <!-- Debug -->
-    <button title="Debug '{ws.selectedConfig}' (⌘D)" class="flex items-center justify-center w-[28px] h-[28px] rounded hover:bg-jb-hover">
+    <button title="Debug '{ws.selectedConfig}' (⌘D)" class="flex items-center justify-center w-[28px] h-[28px] rounded hover:bg-jb-hover disabled:opacity-40 disabled:cursor-not-allowed" disabled={!ws.rootPath}>
       <svg viewBox="0 0 16 16" width="16" height="16" fill="none">
         <circle cx="8" cy="8" r="7" fill="#4e9ede" opacity="0.15"/>
         <circle cx="8" cy="8" r="3" fill="none" stroke="#4e9ede" stroke-width="1.5"/>
@@ -725,9 +749,8 @@
     <button
       title="Stop (⌘F2)"
       onclick={() => handleRunStop()}
-      class="flex items-center justify-center w-[28px] h-[28px] rounded hover:bg-jb-hover"
-      class:opacity-30={!ws.isRunning}
-      class:pointer-events-none={!ws.isRunning}
+      class="flex items-center justify-center w-[28px] h-[28px] rounded hover:bg-jb-hover disabled:opacity-40 disabled:cursor-not-allowed"
+      disabled={!ws.isRunning || !ws.project.rootPath}
     >
       <svg viewBox="0 0 16 16" width="14" height="14">
         <rect x="4" y="4" width="8" height="8" rx="1" fill="#ff6b68"/>
@@ -735,7 +758,7 @@
     </button>
 
     <!-- Build -->
-    <button title="Build Project (⌘F9)" class="flex items-center justify-center w-[28px] h-[28px] rounded hover:bg-jb-hover">
+    <button title="Build Project (⌘F9)" class="flex items-center justify-center w-[28px] h-[28px] rounded hover:bg-jb-hover disabled:opacity-40 disabled:cursor-not-allowed" disabled={!ws.rootPath}>
       <svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.3" class="text-jb-muted">
         <path d="M6 2l-4 7h3v5l4-7H6V2zM10 2l-1 4h2l-2 8 5-6h-3l1-6h-2z" stroke="none" fill="#ffc66d"/>
       </svg>

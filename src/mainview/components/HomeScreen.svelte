@@ -23,7 +23,7 @@
     </div>
     
     <h1 class="title">Welcome to Ultimate Editor</h1>
-    <p class="subtitle">Open a folder to start coding</p>
+    <p class="subtitle">Create a Workspace to Begin</p>
     
     <div class="actions">
       <button class="btn btn-primary" onclick={createFirstWorkspace}>

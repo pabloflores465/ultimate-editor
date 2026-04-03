@@ -130,13 +130,7 @@
   >+</button>
 
   <div class="tabs">
-    {#if workspaceStore.workspaces.length === 0}
-      <!-- Empty state message in tab bar -->
-      <div class="tab tab--empty">
-        <span class="tab-name tab-name--empty">No workspaces</span>
-      </div>
-    {:else}
-      {#each workspaceStore.workspaces as ws, i (ws.id)}
+    {#each workspaceStore.workspaces as ws, i (ws.id)}
         <!-- svelte-ignore a11y_no_static_element_interactions -->
         <div
           class="tab electrobun-webkit-app-region-no-drag"
@@ -192,20 +186,22 @@
             >×</button>
           {/if}
         </div>
-      {/each}
-    {/if}
+    {/each}
   </div>
 
   <!-- Tiling layout buttons -->
   <div class="tiling-btns electrobun-webkit-app-region-no-drag">
     <button
       class="tiling-btn"
-      class:tiling-btn--active={workspaceStore.tilingLayout === 'single'}
-      title="Single workspace"
+      class:tiling-btn--active={workspaceStore.tilingLayout === 'single' && workspaceStore.workspaces.length > 0}
+      class:tiling-btn--disabled={workspaceStore.workspaces.length === 0}
+      title={workspaceStore.workspaces.length === 0 ? "No workspaces" : "Single workspace"}
+      disabled={workspaceStore.workspaces.length === 0}
       onclick={() => workspaceStore.setTilingLayout("single")}
     >
-      <svg viewBox="0 0 18 18" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.2">
-        <rect x="1" y="1" width="16" height="16" rx="1.5"/>
+      <svg viewBox="0 0 18 18" width="14" height="14" fill="none" stroke-width="1.2">
+        <rect x="1" y="1" width="16" height="16" rx="1.5" stroke="#4e7bf0"/>
+        <text x="9" y="12" text-anchor="middle" fill="#4e7bf0" stroke="none" font-size="7" font-weight="700" font-family="system-ui">1</text>
       </svg>
     </button>
     <button
@@ -282,6 +278,7 @@
     onclick={() => workspaceStore.toggleOverview()}
     title="Workspace Overview (Ctrl+Shift+`)"
     aria-label="Workspace overview"
+    disabled={workspaceStore.workspaces.length === 0}
   >
     <svg viewBox="0 0 14 14" width="16" height="16" fill="currentColor">
       <rect x="1" y="1" width="5" height="5" rx="0.7" opacity="0.95"/>
@@ -510,9 +507,14 @@
     -webkit-app-region: no-drag;
   }
 
-  .tab-ws:hover {
+  .tab-ws:hover:not(:disabled) {
     background: #27282c;
     color: #dfe1e5;
+  }
+
+  .tab-ws:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
   }
 
   .tiling-btns {

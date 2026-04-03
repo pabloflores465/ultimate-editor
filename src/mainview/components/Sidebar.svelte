@@ -124,16 +124,17 @@
     const files = input.files;
     const rootName = files[0].webkitRelativePath.split("/")[0];
     const fileNodes = buildTree(files);
-    
-    workspaceStore.updateProject(workspaceId, { rootName, fileNodes });
 
-    const firstFile = files[0] as File & { path?: string };
-    // Since File API doesn't expose absolute paths, we pass the folder name
-    // and let the backend resolve it via git operations
-    const folderPath = rootName;
-    
-    workspaceStore.setRootPath(workspaceId, folderPath);
-    onFolderOpen?.(folderPath);
+    // Set a temporary root path with the folder name
+    const tempPath = `/${rootName}`;
+
+    console.log(`[Sidebar] handleFolderSelect: rootName=${rootName}, fileNodes.length=${fileNodes.length}`);
+    workspaceStore.updateProject(workspaceId, { rootName, fileNodes });
+    workspaceStore.setRootPath(workspaceId, tempPath);
+    console.log(`[Sidebar] After update: ws.id=${workspaceId}, project set`);
+
+    // Trigger backend to get absolute folder path
+    window.dispatchEvent(new CustomEvent('ultimate:folder-selected', { detail: { workspaceId } }));
 
     input.value = "";
   }
