@@ -15,12 +15,14 @@
     icon,
     onContentChange,
     onSave,
+    onCursorChange,
   }: {
     tabId: string;
     content: string;
     icon: string;
     onContentChange: (content: string) => void;
     onSave: () => void;
+    onCursorChange?: (line: number, col: number) => void;
   } = $props();
 
   // ── Internals ────────────────────────────────────────────────────
@@ -170,6 +172,11 @@
         EditorView.updateListener.of((update) => {
           if (update.docChanged && !isRestoring) {
             onContentChange(update.state.doc.toString());
+          }
+          if ((update.selectionSet || update.docChanged) && !isRestoring) {
+            const pos = update.state.selection.main.head;
+            const line = update.state.doc.lineAt(pos);
+            onCursorChange?.(line.number, pos - line.from + 1);
           }
         }),
       ],

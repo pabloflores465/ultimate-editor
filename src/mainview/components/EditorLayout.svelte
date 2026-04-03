@@ -96,7 +96,7 @@
   let runOutput      = $state<{ text: string; stream: "stdout" | "stderr" | "system" }[]>([]);
   let newConfig      = $state("");
   let hamburgerOpen  = $state(false);
-  let toolbarOpen    = $state(false);
+  let toolbarOpen    = $state(true);
   let selectedDiffFile = $state<string | null>(null);
   // mode is stored globally so WorkspaceTabBar can also toggle it
   const mode = $derived(workspaceStore.mode);
@@ -259,6 +259,44 @@
     ws.openTabs.find(t => t.id === ws.activeTabId) ?? null
   );
 
+  // ── Status bar state ──────────────────────────────────────────
+  let cursorLine = $state(1);
+  let cursorCol  = $state(1);
+
+  function detectLineEndings(content: string): string {
+    return content.includes('\r\n') ? 'CRLF' : 'LF';
+  }
+
+  function detectIndent(content: string): string {
+    if (/^\t/m.test(content)) return 'Tab';
+    const m = content.match(/^( {2,8})\S/m);
+    if (m) return `${m[1].length} spaces`;
+    return '2 spaces';
+  }
+
+  function getLangLabel(icon: string): string {
+    const m: Record<string, string> = { svelte:'Svelte', ts:'TypeScript', tsx:'TypeScript JSX', js:'JavaScript', jsx:'JavaScript JSX', css:'CSS', scss:'SCSS', json:'JSON', html:'HTML', md:'Markdown' };
+    return m[icon] ?? (icon ? icon.toUpperCase() : 'Plain Text');
+  }
+  function getLangColor(icon: string): string {
+    const m: Record<string, string> = { svelte:'#ff6b6b', ts:'#4e9ede', tsx:'#4e9ede', js:'#ffc66d', jsx:'#ffc66d', css:'#9876aa', scss:'#9876aa', json:'#aed9b8', html:'#cc7832', md:'#a9b7c6' };
+    return m[icon] ?? '#a9b7c6';
+  }
+  function getLangLetter(icon: string): string {
+    const m: Record<string, string> = { svelte:'S', ts:'TS', tsx:'TS', js:'JS', jsx:'JS', css:'CSS', scss:'SC', json:'JS', html:'H', md:'M' };
+    return m[icon] ?? icon.slice(0, 2).toUpperCase();
+  }
+
+  const statusLineEndings = $derived(activeTab ? detectLineEndings(activeTab.content) : 'LF');
+  const statusIndent      = $derived(activeTab ? detectIndent(activeTab.content) : '2 spaces');
+  const statusLang        = $derived(activeTab ? getLangLabel(activeTab.icon) : 'Plain Text');
+  const statusLangColor   = $derived(activeTab ? getLangColor(activeTab.icon) : '#a9b7c6');
+  const statusLangLetter  = $derived(activeTab ? getLangLetter(activeTab.icon) : '');
+
+  $effect(() => {
+    if (!activeTab) { cursorLine = 1; cursorCol = 1; }
+  });
+
   // ── Save current file ────────────────────────────────────────
   function saveCurrentFile() {
     if (ws.activeTabId) {
@@ -281,11 +319,18 @@
       termRpc.send["folder:pick"]({ workspaceId: customEvent.detail.workspaceId });
     }
 
+    function handleOpenFolder(e: Event) {
+      console.log(`[EditorLayout] open-folder event received for current workspace ${ws.id}`);
+      termRpc.send["folder:pick"]({ workspaceId: ws.id });
+    }
+
     window.addEventListener("keydown", handleKey);
     window.addEventListener("ultimate:folder-selected", handleFolderSelected);
+    window.addEventListener("ultimate:open-folder", handleOpenFolder);
     return () => {
       window.removeEventListener("keydown", handleKey);
       window.removeEventListener("ultimate:folder-selected", handleFolderSelected);
+      window.removeEventListener("ultimate:open-folder", handleOpenFolder);
     };
   });
 
@@ -1125,17 +1170,40 @@
                 icon={activeTab.icon}
                 onContentChange={(newContent) => workspaceStore.updateTabContent(activeTab!.id, newContent)}
                 onSave={saveCurrentFile}
+                onCursorChange={(line, col) => { cursorLine = line; cursorCol = col; }}
               />
             {/key}
           {:else if hasProject}
-            <div class="flex-1 bg-jb-bg"></div>
+            <div class="flex-1 bg-jb-bg flex flex-col items-center justify-center gap-3">
+              <svg viewBox="0 0 24 24" width="48" height="48" fill="none" stroke="#4c5052" stroke-width="1.5" class="opacity-50">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                <polyline points="14 2 14 8 20 8"/>
+              </svg>
+              <p class="text-[13px] font-medium" style="color:#5a5d5f">No file open</p>
+              <p class="text-[11px]" style="color:#4c5052">Select a file from the explorer or use Ctrl+P</p>
+            </div>
           {:else}
-            <div class="flex-1 bg-jb-bg flex flex-col items-center justify-center gap-4 select-none pointer-events-none">
+            <div class="flex-1 bg-jb-bg flex flex-col items-center justify-center gap-4">
               <svg viewBox="0 0 48 48" width="52" height="52" fill="none" stroke="#4c5052" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="opacity-60">
                 <path d="M6 10h12l4 5h20a3 3 0 0 1 3 3v18a3 3 0 0 1-3 3H6a3 3 0 0 1-3-3V13a3 3 0 0 1 3-3z"/>
               </svg>
               <p class="text-[14px] font-medium" style="color:#5a5d5f">No project open</p>
-              <p class="text-[12px]" style="color:#46494a">Open a project or file to start editing</p>
+              <button
+                class="flex items-center gap-2 px-4 py-2 text-[13px] text-jb-text bg-jb-panel border border-jb-border rounded hover:bg-jb-hover hover:border-jb-blue/50 transition-colors"
+                onclick={() => { const event = new CustomEvent('ultimate:open-folder'); window.dispatchEvent(event); }}
+              >
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+                </svg>
+                <span>Open Folder</span>
+              </button>
+              <div class="flex items-center gap-2 text-[11px]" style="color:#5a5d5f">
+                <kbd class="px-1.5 py-0.5 bg-jb-panel2 border border-jb-border rounded text-[10px]">Ctrl</kbd>
+                +
+                <kbd class="px-1.5 py-0.5 bg-jb-panel2 border border-jb-border rounded text-[10px]">Shift</kbd>
+                +
+                <kbd class="px-1.5 py-0.5 bg-jb-panel2 border border-jb-border rounded text-[10px]">O</kbd>
+              </div>
             </div>
           {/if}
         </div><!-- end editor area -->
@@ -1706,50 +1774,52 @@
   <footer class="flex items-center justify-between h-[22px] bg-jb-panel2 border-t border-jb-border flex-shrink-0 px-2 text-[11px]">
     <!-- Left -->
     <div class="flex items-center gap-0">
+      {#if gitIsRepo}
       <button title="Git Branch" class="flex items-center gap-1.5 px-2 h-[22px] text-jb-text hover:bg-jb-hover rounded cursor-pointer bg-transparent border-none font-[inherit] text-[11px]">
         <svg viewBox="0 0 14 14" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.2">
           <circle cx="3.5" cy="3.5" r="1.5"/><circle cx="10.5" cy="3.5" r="1.5"/>
           <circle cx="3.5" cy="10.5" r="1.5"/>
           <path d="M3.5 5v3.5M5 3.5h3.5a2 2 0 0 1 2 2v1.5"/>
         </svg>
-        main
+        {gitBranch || 'main'}
       </button>
-      <button title="Fetch" class="flex items-center px-1.5 h-[22px] text-jb-muted hover:bg-jb-hover rounded cursor-pointer bg-transparent border-none text-[10px]">
-        ↕ 0↑ 0↓
-      </button>
+      {/if}
 
       <div class="w-px h-3.5 bg-jb-border mx-1"></div>
 
+      {#if activeTab}
       <span class="px-2 text-jb-muted flex items-center gap-1">
         <svg viewBox="0 0 12 12" width="10" height="10" fill="#629755"><path d="M6 1a5 5 0 1 1 0 10A5 5 0 0 1 6 1zm2.5 3l-3.5 3.5-1.5-1.5-.7.7 2.2 2.2 4.2-4.2z"/></svg>
-        Svelte · No problems
+        {statusLang} · No problems
       </span>
+      {/if}
     </div>
     <!-- Right -->
     <div class="flex items-center gap-0">
-      {#each [
-        { label:"1:1", title:"Go to Line" },
-        { label:"LF", title:"Line Separator" },
-        { label:"UTF-8", title:"File Encoding" },
-        { label:"2 spaces", title:"Indent" },
-      ] as si}
-        <button title={si.title} class="px-2 h-[22px] text-jb-muted hover:bg-jb-hover hover:text-jb-text rounded cursor-pointer bg-transparent border-none font-[inherit] text-[11px] whitespace-nowrap">
-          {si.label}
+      {#if activeTab}
+        <button title="Go to Line" class="px-2 h-[22px] text-jb-muted hover:bg-jb-hover hover:text-jb-text rounded cursor-pointer bg-transparent border-none font-[inherit] text-[11px] whitespace-nowrap">
+          {cursorLine}:{cursorCol}
         </button>
-      {/each}
-      <div class="w-px h-3.5 bg-jb-border mx-1"></div>
-      <button title="Svelte" class="flex items-center gap-1 px-2 h-[22px] text-jb-muted hover:bg-jb-hover hover:text-jb-text rounded cursor-pointer bg-transparent border-none font-[inherit] text-[11px]">
-        <span style="color:#ff6b6b; font-weight:bold;">S</span> Svelte
-      </button>
-      <button title="Code Style: Prettier" class="px-2 h-[22px] text-jb-muted hover:bg-jb-hover hover:text-jb-text rounded cursor-pointer bg-transparent border-none font-[inherit] text-[11px]">
-        Prettier
-      </button>
-      <button title="Inspections: No errors" class="flex items-center gap-1 px-2 h-[22px] text-jb-green hover:bg-jb-hover rounded cursor-pointer bg-transparent border-none font-[inherit] text-[11px]">
-        <svg viewBox="0 0 12 12" width="11" height="11" fill="currentColor">
-          <path d="M6 1a5 5 0 1 1 0 10A5 5 0 0 1 6 1zm2.5 3l-3.5 3.5-1.5-1.5-.7.7 2.2 2.2 4.2-4.2z"/>
-        </svg>
-        0
-      </button>
+        <button title="Line Separator" class="px-2 h-[22px] text-jb-muted hover:bg-jb-hover hover:text-jb-text rounded cursor-pointer bg-transparent border-none font-[inherit] text-[11px] whitespace-nowrap">
+          {statusLineEndings}
+        </button>
+        <button title="File Encoding" class="px-2 h-[22px] text-jb-muted hover:bg-jb-hover hover:text-jb-text rounded cursor-pointer bg-transparent border-none font-[inherit] text-[11px] whitespace-nowrap">
+          UTF-8
+        </button>
+        <button title="Indent" class="px-2 h-[22px] text-jb-muted hover:bg-jb-hover hover:text-jb-text rounded cursor-pointer bg-transparent border-none font-[inherit] text-[11px] whitespace-nowrap">
+          {statusIndent}
+        </button>
+        <div class="w-px h-3.5 bg-jb-border mx-1"></div>
+        <button title={statusLang} class="flex items-center gap-1 px-2 h-[22px] text-jb-muted hover:bg-jb-hover hover:text-jb-text rounded cursor-pointer bg-transparent border-none font-[inherit] text-[11px]">
+          <span style="color:{statusLangColor}; font-weight:bold;">{statusLangLetter}</span> {statusLang}
+        </button>
+        <button title="Inspections: No errors" class="flex items-center gap-1 px-2 h-[22px] text-jb-green hover:bg-jb-hover rounded cursor-pointer bg-transparent border-none font-[inherit] text-[11px]">
+          <svg viewBox="0 0 12 12" width="11" height="11" fill="currentColor">
+            <path d="M6 1a5 5 0 1 1 0 10A5 5 0 0 1 6 1zm2.5 3l-3.5 3.5-1.5-1.5-.7.7 2.2 2.2 4.2-4.2z"/>
+          </svg>
+          0
+        </button>
+      {/if}
     </div>
   </footer>
 
