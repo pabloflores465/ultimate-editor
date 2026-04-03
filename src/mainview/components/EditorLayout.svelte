@@ -725,7 +725,7 @@
       title="Run '{ws.selectedConfig}' (⌘R)"
       onclick={() => handleRunExecute(ws.selectedConfig)}
       class="flex items-center justify-center w-[28px] h-[28px] rounded hover:bg-jb-hover disabled:opacity-40 disabled:cursor-not-allowed"
-      disabled={ws.isRunning || !ws.rootPath}
+      disabled={ws.isRunning || !hasProject}
     >
       <svg viewBox="0 0 16 16" width="16" height="16" fill="none">
         <circle cx="8" cy="8" r="7" fill="#629755" opacity={ws.isRunning ? 0.05 : 0.15}/>
@@ -734,7 +734,7 @@
     </button>
 
     <!-- Debug -->
-    <button title="Debug '{ws.selectedConfig}' (⌘D)" class="flex items-center justify-center w-[28px] h-[28px] rounded hover:bg-jb-hover disabled:opacity-40 disabled:cursor-not-allowed" disabled={!ws.rootPath}>
+    <button title="Debug '{ws.selectedConfig}' (⌘D)" class="flex items-center justify-center w-[28px] h-[28px] rounded hover:bg-jb-hover disabled:opacity-40 disabled:cursor-not-allowed" disabled={!hasProject}>
       <svg viewBox="0 0 16 16" width="16" height="16" fill="none">
         <circle cx="8" cy="8" r="7" fill="#4e9ede" opacity="0.15"/>
         <circle cx="8" cy="8" r="3" fill="none" stroke="#4e9ede" stroke-width="1.5"/>
@@ -758,7 +758,7 @@
     </button>
 
     <!-- Build -->
-    <button title="Build Project (⌘F9)" class="flex items-center justify-center w-[28px] h-[28px] rounded hover:bg-jb-hover disabled:opacity-40 disabled:cursor-not-allowed" disabled={!ws.rootPath}>
+    <button title="Build Project (⌘F9)" class="flex items-center justify-center w-[28px] h-[28px] rounded hover:bg-jb-hover disabled:opacity-40 disabled:cursor-not-allowed" disabled={!hasProject}>
       <svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.3" class="text-jb-muted">
         <path d="M6 2l-4 7h3v5l4-7H6V2zM10 2l-1 4h2l-2 8 5-6h-3l1-6h-2z" stroke="none" fill="#ffc66d"/>
       </svg>
