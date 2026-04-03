@@ -128,6 +128,8 @@ class WorkspaceStore {
     this.activeIndex = index;
     this.transitionKey++;
     this.overviewOpen = false;
+    // Clear loading state when switching to this workspace
+    this.workspaces[index].isLoadingProject = false;
     push(this.workspaces[index].activeRoute);
   }
 

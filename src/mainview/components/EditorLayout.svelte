@@ -389,7 +389,7 @@
     return m[icon] ?? '#a9b7c6';
   }
   function getLangLetter(icon: string): string {
-    const m: Record<string, string> = { svelte:'S', ts:'TS', tsx:'TS', js:'JS', jsx:'JS', css:'CSS', scss:'SC', json:'JS', html:'H', md:'M' };
+    const m: Record<string, string> = { svelte:'S', ts:'TS', tsx:'TS', js:'JS', jsx:'JS', css:'CSS', scss:'SC', json:'{}', html:'H', md:'M' };
     return m[icon] ?? icon.slice(0, 2).toUpperCase();
   }
 
@@ -1199,11 +1199,11 @@
             onclick={() => workspaceStore.setActiveTab(tab.id)}
             onkeydown={(e) => e.key === "Enter" && workspaceStore.setActiveTab(tab.id)}
           >
-            <!-- File type dot / unsaved indicator -->
+            <!-- File type icon / unsaved indicator -->
             {#if tab.modified}
               <span class="w-2 h-2 rounded-full bg-[#e2c08d] flex-shrink-0" title="Unsaved changes"></span>
             {:else}
-              <span class="text-[9px] font-bold flex-shrink-0" style="color:{iconColor(tab.icon)}">●</span>
+              <span class="text-[9px] font-bold flex-shrink-0 w-4 text-center" style="color:{iconColor(tab.icon)}">{getLangLetter(tab.icon)}</span>
             {/if}
             <span>{tab.name}</span>
             <!-- Save hint when modified -->
@@ -1212,7 +1212,7 @@
             {/if}
             <!-- Close button -->
             <button
-              class="ml-1 text-[13px] leading-none bg-transparent border-none cursor-pointer px-0.5 rounded text-transparent group-hover:text-jb-muted hover:!text-jb-text hover:bg-jb-hover"
+              class="ml-1 text-[13px] leading-none bg-transparent border-none cursor-pointer px-0.5 rounded text-jb-muted hover:!text-jb-text hover:bg-jb-hover"
               title="Close tab"
               onclick={(e) => { e.stopPropagation(); workspaceStore.closeTab(tab.id); }}
             >×</button>
