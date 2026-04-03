@@ -676,7 +676,7 @@
   <div class="flex items-center h-[38px] bg-jb-panel border-b border-jb-border flex-shrink-0 px-2 gap-0.5">
 
     <!-- Search everywhere -->
-    <button title="Search Everywhere (⇧⇧)" class="toolbar-btn flex items-center gap-1 px-2 py-1 text-[12px] rounded hover:bg-jb-hover disabled:opacity-40 disabled:cursor-not-allowed" disabled={!ws.rootPath}>
+    <button title="Search Everywhere (⇧⇧)" class="toolbar-btn flex items-center gap-1 px-2 py-1 text-[12px] rounded hover:bg-jb-hover disabled:opacity-40 disabled:cursor-not-allowed" disabled={!hasProject}>
       <svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.3" class="text-jb-muted">
         <circle cx="6.5" cy="6.5" r="5"/><path d="M11 11l3.5 3.5"/>
       </svg>
@@ -772,7 +772,7 @@
       { title:"Commit (⌘K)",         svg:`<polyline points="4,8 7,11 12,5" stroke-width="1.5"/>` },
       { title:"Push (⌘⇧K)",          svg:`<path d="M8 13V5M8 5l-3 3M8 5l3 3" stroke-width="1.5"/>` },
     ] as ga}
-      <button title={ga.title} class="flex items-center justify-center w-[28px] h-[28px] rounded hover:bg-jb-hover disabled:opacity-40 disabled:cursor-not-allowed" disabled={!ws.rootPath}>
+      <button title={ga.title} class="flex items-center justify-center w-[28px] h-[28px] rounded hover:bg-jb-hover disabled:opacity-40 disabled:cursor-not-allowed" disabled={!hasProject}>
         <svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="#a9b7c6" class="text-jb-text">
           {@html ga.svg}
         </svg>
@@ -782,7 +782,7 @@
     <div class="w-px h-5 bg-jb-border mx-1"></div>
 
     <!-- Recent files -->
-    <button title="Recent Files (⌘E)" class="flex items-center justify-center w-[28px] h-[28px] rounded hover:bg-jb-hover disabled:opacity-40 disabled:cursor-not-allowed" disabled={!ws.rootPath}>
+    <button title="Recent Files (⌘E)" class="flex items-center justify-center w-[28px] h-[28px] rounded hover:bg-jb-hover disabled:opacity-40 disabled:cursor-not-allowed" disabled={!hasProject}>
       <svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="#a9b7c6" stroke-width="1.3">
         <rect x="3" y="2" width="10" height="12" rx="1"/>
         <path d="M6 6h4M6 9h4M6 12h2"/>
