@@ -101,6 +101,108 @@
   // mode is stored globally so WorkspaceTabBar can also toggle it
   const mode = $derived(workspaceStore.mode);
 
+  // ── Hidden file input for folder picker ───────────────────
+  let folderInput = $state<HTMLInputElement | null>(null);
+
+  function openFolderDialog() {
+    folderInput?.click();
+  }
+
+  function handleFolderSelect(e: Event) {
+    const input = e.target as HTMLInputElement;
+    if (!input.files?.length) return;
+
+    // Set loading state
+    workspaceStore.updateActive({ isLoadingProject: true });
+
+    const files = input.files;
+    const rootName = files[0].webkitRelativePath.split("/")[0];
+
+    // Use setTimeout to allow UI update and show loading screen
+    setTimeout(() => {
+      const fileNodes = buildFileTree(files);
+
+      // Set a temporary root path with the folder name
+      const tempPath = `/${rootName}`;
+
+      console.log(`[EditorLayout] handleFolderSelect: rootName=${rootName}, fileNodes.length=${fileNodes.length}`);
+      workspaceStore.updateProject(ws.id, { rootName, fileNodes });
+      workspaceStore.setRootPath(ws.id, tempPath);
+      workspaceStore.updateActive({ isLoadingProject: false });
+      console.log(`[EditorLayout] After update: ws.id=${ws.id}, project set`);
+
+      // Trigger backend to get absolute folder path
+      window.dispatchEvent(new CustomEvent('ultimate:folder-selected', { detail: { workspaceId: ws.id } }));
+
+      input.value = "";
+    }, 100);
+  }
+
+  function buildFileTree(files: FileList): any[] {
+    const folderMap = new Map<string, any[]>();
+    folderMap.set("", []);
+
+    const sorted = Array.from(files).sort((a, b) =>
+      a.webkitRelativePath.localeCompare(b.webkitRelativePath),
+    );
+
+    for (const file of sorted) {
+      const parts = file.webkitRelativePath.split("/");
+
+      for (let i = 1; i < parts.length - 1; i++) {
+        const folderPath = parts.slice(1, i + 1).join("/");
+        const parentPath = parts.slice(1, i).join("/");
+
+        if (!folderMap.has(folderPath)) {
+          const children: any[] = [];
+          folderMap.set(folderPath, children);
+
+          const folderNode = {
+            name: parts[i],
+            type: "folder" as const,
+            key: folderPath,
+            children,
+          };
+          folderMap.get(parentPath)!.push(folderNode);
+        }
+      }
+
+      const fileName = parts[parts.length - 1];
+      const parentPath = parts.slice(1, parts.length - 1).join("/");
+      const parentChildren = folderMap.get(parentPath) ?? folderMap.get("")!;
+
+      const filePath = parts.slice(1).join("/");
+
+      parentChildren.push({
+        name: fileName,
+        type: "file" as const,
+        icon: getFileIcon(fileName),
+        route: null,
+        path: filePath,
+      });
+    }
+
+    return folderMap.get("")!;
+  }
+
+  function getFileIcon(name: string): string {
+    const ext = name.split(".").pop()?.toLowerCase() ?? "";
+    const map: Record<string, string> = {
+      svelte: "svelte",
+      ts: "ts",
+      tsx: "ts",
+      js: "js",
+      jsx: "js",
+      mjs: "js",
+      cjs: "js",
+      css: "css",
+      scss: "css",
+      json: "json",
+      jsonc: "json",
+    };
+    return map[ext] ?? "file";
+  }
+
   // ── Menu dropdown state ─────────────────────────────────────
   type MenuId = "File" | "Edit" | "View" | "Navigate" | "Code" | "Refactor" | "Build" | "Run" | "Tools" | "Git" | "Window" | "Help" | null;
   let activeMenu = $state<MenuId>(null);
@@ -311,6 +413,10 @@
         e.preventDefault();
         saveCurrentFile();
       }
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === "o") {
+        e.preventDefault();
+        openFolderDialog();
+      }
     }
 
     function handleFolderSelected(e: Event) {
@@ -319,18 +425,11 @@
       termRpc.send["folder:pick"]({ workspaceId: customEvent.detail.workspaceId });
     }
 
-    function handleOpenFolder(e: Event) {
-      console.log(`[EditorLayout] open-folder event received for current workspace ${ws.id}`);
-      termRpc.send["folder:pick"]({ workspaceId: ws.id });
-    }
-
     window.addEventListener("keydown", handleKey);
     window.addEventListener("ultimate:folder-selected", handleFolderSelected);
-    window.addEventListener("ultimate:open-folder", handleOpenFolder);
     return () => {
       window.removeEventListener("keydown", handleKey);
       window.removeEventListener("ultimate:folder-selected", handleFolderSelected);
-      window.removeEventListener("ultimate:open-folder", handleOpenFolder);
     };
   });
 
@@ -1188,9 +1287,19 @@
                 <path d="M6 10h12l4 5h20a3 3 0 0 1 3 3v18a3 3 0 0 1-3 3H6a3 3 0 0 1-3-3V13a3 3 0 0 1 3-3z"/>
               </svg>
               <p class="text-[14px] font-medium" style="color:#5a5d5f">No project open</p>
+              <input
+                type="file"
+                bind:this={folderInput}
+                webkitdirectory
+                directory
+                multiple
+                accept="*"
+                class="hidden"
+                onchange={handleFolderSelect}
+              />
               <button
                 class="flex items-center gap-2 px-4 py-2 text-[13px] text-jb-text bg-jb-panel border border-jb-border rounded hover:bg-jb-hover hover:border-jb-blue/50 transition-colors"
-                onclick={() => { const event = new CustomEvent('ultimate:open-folder'); window.dispatchEvent(event); }}
+                onclick={openFolderDialog}
               >
                 <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
                   <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
