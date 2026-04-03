@@ -96,7 +96,7 @@
   let runOutput      = $state<{ text: string; stream: "stdout" | "stderr" | "system" }[]>([]);
   let newConfig      = $state("");
   let hamburgerOpen  = $state(false);
-  let toolbarOpen    = $state(true);
+  let toolbarOpen    = $state(false);
   let selectedDiffFile = $state<string | null>(null);
   // mode is stored globally so WorkspaceTabBar can also toggle it
   const mode = $derived(workspaceStore.mode);
@@ -291,11 +291,8 @@
 
   // ── Left tool strip ───────────────────────────────────────
   const leftTools = [
-    { id:"project",   num:"1", label:"Project" },
-    { id:"structure", num:"2", label:"Structure" },
-    { id:"git",       num:"3", label:"Git" },
-    { id:"bookmarks", num:"4", label:"Bookmarks" },
-    { id:"database",  num:"8", label:"Database" },
+    { id:"project", label:"Project", svg:`<svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.3"><path d="M2 4a1 1 0 0 1 1-1h3l1.5 1.5H13a1 1 0 0 1 1 1V12a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V4z"/></svg>` },
+    { id:"git",     label:"Git",     svg:`<svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.3"><circle cx="5" cy="4" r="1.5"/><circle cx="5" cy="12" r="1.5"/><circle cx="11" cy="4" r="1.5"/><path d="M5 5.5v5M5 5.5C5 8 11 8 11 5.5"/></svg>` },
   ];
 
   function toggleTool(id: string) {
@@ -816,27 +813,18 @@
   <div class="flex flex-1 min-h-0 overflow-hidden">
 
     <!-- ── LEFT TOOL STRIP ── -->
-    <div class="flex flex-col justify-between bg-jb-panel border-r border-jb-border flex-shrink-0 w-[25px]">
-      <!-- Top tool buttons -->
+    <div class="flex flex-col bg-jb-panel border-r border-jb-border flex-shrink-0 w-[36px]">
       <div class="flex flex-col items-center pt-1">
         {#each leftTools as tool}
           <button
             title={tool.label}
-            class="tool-strip-btn flex items-center gap-1 px-1 py-2.5 text-[11px] cursor-pointer border-none bg-transparent w-full justify-center
+            class="tool-strip-btn flex items-center justify-center w-full h-[36px] cursor-pointer border-none bg-transparent
               {ws.activeTool === tool.id && ws.leftPanelOpen ? 'text-jb-text2 bg-jb-active' : 'text-jb-muted hover:text-jb-text hover:bg-jb-hover'}"
             onclick={() => toggleTool(tool.id)}
           >
-            <span
-              class="[writing-mode:vertical-rl] rotate-180 font-medium tracking-wide whitespace-nowrap leading-none text-[11px]"
-            >{tool.num}: {tool.label}</span>
+            {@html tool.svg}
           </button>
         {/each}
-      </div>
-      <!-- Bottom tool buttons -->
-      <div class="flex flex-col items-center pb-1">
-        <button title="Notifications" class="flex items-center justify-center w-full py-2 text-jb-muted hover:text-jb-text hover:bg-jb-hover bg-transparent border-none cursor-pointer">
-          <span class="[writing-mode:vertical-rl] rotate-180 text-[11px] whitespace-nowrap">Notifications</span>
-        </button>
       </div>
     </div>
 
@@ -1050,6 +1038,7 @@
     {#if mode === "editor"}
 
       <!-- Navigation Bar (breadcrumb) -->
+      {#if hasProject}
       <div class="flex items-center h-[26px] bg-jb-panel border-b border-jb-border flex-shrink-0 px-3 gap-1 text-[12px] overflow-hidden">
         <svg viewBox="0 0 12 12" width="12" height="12" fill="#4e9ede" class="flex-shrink-0">
           <rect x="0.5" y="1.5" width="11" height="9" rx="1"/><rect x="0.5" y="1.5" width="5" height="3" rx="1" fill="#6aaddc"/>
@@ -1125,6 +1114,7 @@
           <button title="Recent Files (⌘E)" class="w-6 h-6 flex items-center justify-center rounded text-jb-muted hover:bg-jb-hover hover:text-jb-text bg-transparent border-none cursor-pointer text-[11px]">⊠</button>
         </div>
       </div>
+      {/if}
 
       <!-- ── EDITOR AREA ── -->
         <div class="flex-1 flex min-h-0 overflow-hidden bg-jb-bg relative">
@@ -1622,32 +1612,18 @@
     {/if}
 
     <!-- ── RIGHT TOOL STRIP ── -->
-    <div class="flex flex-col justify-between bg-jb-panel border-l border-jb-border flex-shrink-0 w-[25px]">
+    <div class="flex flex-col bg-jb-panel border-l border-jb-border flex-shrink-0 w-[36px]">
       <div class="flex flex-col items-center pt-1">
-        {#each [
-          { id:"chat",      num:"5", label:"AI Chat" },
-          { id:"npm",       num:"6", label:"npm" },
-          { id:"endpoints", num:"7", label:"Endpoints" },
-        ] as rt}
-          <button
-            title={rt.label}
-            onclick={() => {
-              if (ws.rightPanelOpen) {
-                onUpdate({ rightPanelOpen: false });
-              } else {
-                onUpdate({ rightPanelOpen: true });
-              }
-            }}
-            class="flex items-center justify-center px-1 py-2.5 text-[11px] cursor-pointer border-none bg-transparent w-full
-              {rt.id === 'chat' && ws.rightPanelOpen
-                ? 'text-jb-text2 bg-jb-active'
-                : 'text-jb-muted hover:text-jb-text hover:bg-jb-hover'}"
-          >
-            <span class="[writing-mode:vertical-rl] font-medium tracking-wide whitespace-nowrap leading-none text-[11px]">
-              {rt.num}: {rt.label}
-            </span>
-          </button>
-        {/each}
+        <button
+          title="Agent"
+          onclick={() => onUpdate({ rightPanelOpen: !ws.rightPanelOpen })}
+          class="flex items-center justify-center w-full h-[36px] cursor-pointer border-none bg-transparent
+            {ws.rightPanelOpen ? 'text-jb-text2 bg-jb-active' : 'text-jb-muted hover:text-jb-text hover:bg-jb-hover'}"
+        >
+          <svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round">
+            <path d="M8 1C8 5 11 8 15 8C11 8 8 11 8 15C8 11 5 8 1 8C5 8 8 5 8 1Z"/>
+          </svg>
+        </button>
       </div>
     </div>
 
