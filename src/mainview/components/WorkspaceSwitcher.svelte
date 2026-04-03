@@ -592,7 +592,16 @@
       <!-- PREV slot -->
       <div class="ws-slot ws-slot--prev">
         {#if showPrev && prevWs}
-          <WorkspacePreviewFull ws={prevWs} />
+          <EditorLayout
+            ws={prevWs}
+            onUpdate={(patch) => {
+              const idx = workspaceStore.workspaces.findIndex(w => w.id === prevWs.id);
+              if (idx >= 0) workspaceStore.updateWorkspace(idx, patch);
+            }}
+            onOpenOverview={() => workspaceStore.toggleOverview()}
+          >
+            {@render children()}
+          </EditorLayout>
         {:else if showPrev}
           <div class="ws-edge">← First workspace</div>
         {/if}
@@ -612,7 +621,16 @@
       <!-- NEXT slot -->
       <div class="ws-slot ws-slot--next">
         {#if showNext && nextWs}
-          <WorkspacePreviewFull ws={nextWs} />
+          <EditorLayout
+            ws={nextWs}
+            onUpdate={(patch) => {
+              const idx = workspaceStore.workspaces.findIndex(w => w.id === nextWs.id);
+              if (idx >= 0) workspaceStore.updateWorkspace(idx, patch);
+            }}
+            onOpenOverview={() => workspaceStore.toggleOverview()}
+          >
+            {@render children()}
+          </EditorLayout>
         {:else if showNext}
           <div class="ws-edge">Last workspace →</div>
         {/if}
