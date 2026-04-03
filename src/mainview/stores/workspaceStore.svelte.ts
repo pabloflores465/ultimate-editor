@@ -45,6 +45,7 @@ export interface WorkspaceState {
   selectedConfig: string;
   runConfigs: string[];
   isRunning: boolean;
+  isLoadingProject: boolean;
   openTabs: EditorTab[];
   activeTabId: string | null;
   breakpoints: Record<string, number[]>;
@@ -71,6 +72,7 @@ function createWorkspace(name: string): WorkspaceState {
     selectedConfig: "",
     runConfigs: [],
     isRunning: false,
+    isLoadingProject: false,
     openTabs: [],
     activeTabId: null,
     breakpoints: {},

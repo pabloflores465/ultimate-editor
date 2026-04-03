@@ -121,22 +121,30 @@
     const input = e.target as HTMLInputElement;
     if (!input.files?.length) return;
 
+    // Set loading state
+    workspaceStore.updateActive({ isLoadingProject: true });
+
     const files = input.files;
     const rootName = files[0].webkitRelativePath.split("/")[0];
-    const fileNodes = buildTree(files);
 
-    // Set a temporary root path with the folder name
-    const tempPath = `/${rootName}`;
+    // Use setTimeout to allow UI update and show loading screen
+    setTimeout(() => {
+      const fileNodes = buildTree(files);
 
-    console.log(`[Sidebar] handleFolderSelect: rootName=${rootName}, fileNodes.length=${fileNodes.length}`);
-    workspaceStore.updateProject(workspaceId, { rootName, fileNodes });
-    workspaceStore.setRootPath(workspaceId, tempPath);
-    console.log(`[Sidebar] After update: ws.id=${workspaceId}, project set`);
+      // Set a temporary root path with the folder name
+      const tempPath = `/${rootName}`;
 
-    // Trigger backend to get absolute folder path
-    window.dispatchEvent(new CustomEvent('ultimate:folder-selected', { detail: { workspaceId } }));
+      console.log(`[Sidebar] handleFolderSelect: rootName=${rootName}, fileNodes.length=${fileNodes.length}`);
+      workspaceStore.updateProject(workspaceId, { rootName, fileNodes });
+      workspaceStore.setRootPath(workspaceId, tempPath);
+      workspaceStore.updateActive({ isLoadingProject: false });
+      console.log(`[Sidebar] After update: ws.id=${workspaceId}, project set`);
 
-    input.value = "";
+      // Trigger backend to get absolute folder path
+      window.dispatchEvent(new CustomEvent('ultimate:folder-selected', { detail: { workspaceId } }));
+
+      input.value = "";
+    }, 100);
   }
 
   function handleDrop(e: DragEvent) {
@@ -149,12 +157,16 @@
     for (const item of Array.from(items)) {
       const entry = item.webkitGetAsEntry?.();
       if (entry?.isDirectory) {
-        workspaceStore.updateProject(workspaceId, { 
-          rootName: entry.name, 
-          fileNodes: [] 
-        });
-        workspaceStore.setRootPath(workspaceId, entry.name);
-        onFolderOpen?.(entry.name);
+        workspaceStore.updateActive({ isLoadingProject: true });
+        setTimeout(() => {
+          workspaceStore.updateProject(workspaceId, {
+            rootName: entry.name,
+            fileNodes: []
+          });
+          workspaceStore.setRootPath(workspaceId, entry.name);
+          workspaceStore.updateActive({ isLoadingProject: false });
+          onFolderOpen?.(entry.name);
+        }, 100);
         break;
       }
     }

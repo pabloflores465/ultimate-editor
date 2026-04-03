@@ -5,6 +5,7 @@
   import Terminal from "./Terminal.svelte";
   import CodeEditor from "./CodeEditor.svelte";
   import ChatPanel from "./ChatPanel.svelte";
+  import LoadingScreen from "./LoadingScreen.svelte";
   import type { WorkspaceState } from "../stores/workspaceStore.svelte";
   import { workspaceStore } from "../stores/workspaceStore.svelte";
   import { Electroview } from "electrobun/view";
@@ -469,8 +470,6 @@
           if (data.rootPath && (data.rootPath.startsWith('/') || /^[A-Za-z]:/.test(data.rootPath))) {
             console.log(`[EditorLayout] Received rootPath from git: ${data.rootPath}`);
             workspaceStore.setRootPath(ws.id, data.rootPath);
-            // Send to backend for auto-cd when terminal is created
-            termRpc.send["workspace:setRootPath"]({ workspaceId: ws.id, path: data.rootPath });
           }
         },
         "git:diff": (data: { filePath: string; diff: string }) => {
@@ -487,13 +486,15 @@
         "folder:picked": (data: { workspaceId: string; path: string; name: string; cancelled: boolean }) => {
           console.log(`[EditorLayout] folder:picked received: ${data.path}`);
           if (!data.cancelled && data.path) {
+            const currentPath = ws.project.rootPath;
             // Update store with path (can be absolute or relative)
             workspaceStore.setRootPath(ws.id, data.path);
-            // Send to backend for auto-cd when terminal is created
-            termRpc.send["workspace:setRootPath"]({ workspaceId: ws.id, path: data.path });
-            // Also trigger git:open to get proper git status if it's a git repo
-            if (data.path.startsWith('/') || /^[A-Za-z]:/.test(data.path)) {
-              termRpc.send["git:open"]({ path: data.path });
+            // Only send cd + git:open if this is a new path (avoid loop with git:open → folder:picked)
+            if (data.path !== currentPath) {
+              termRpc.send["workspace:setRootPath"]({ workspaceId: ws.id, path: data.path });
+              if (data.path.startsWith('/') || /^[A-Za-z]:/.test(data.path)) {
+                termRpc.send["git:open"]({ path: data.path });
+              }
             }
           }
         },
@@ -576,6 +577,9 @@
   class="flex flex-col w-full h-full bg-jb-bg text-jb-text overflow-hidden text-[13px]"
   style:cursor={resizingLeft || resizingRight ? "col-resize" : resizingBottom ? "row-resize" : "default"}
 >
+
+  <!-- ══ LOADING SCREEN ════════════════════════════════════ -->
+  <LoadingScreen isVisible={ws.isLoadingProject} />
 
   <!-- ══ MENU BAR ══════════════════════════════════════════ -->
   <!-- With CSD (hiddenInset), the workspace tab bar IS the title bar.
