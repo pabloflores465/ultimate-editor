@@ -355,7 +355,7 @@
   </div>
 
   <!-- Input area -->
-  <div class="flex-shrink-0 border-t border-jb-border p-2 bg-jb-panel">
+  <div class="flex-shrink-0 border-t border-jb-border px-4 py-4 pb-6 bg-jb-panel">
     <!-- Quick actions -->
     <div class="flex items-center gap-1 mb-2">
       <button
@@ -377,19 +377,19 @@
     </div>
 
     <!-- Input -->
-    <div class="relative">
+    <div class="relative mb-2">
       <textarea
         bind:value={inputText}
         onkeydown={handleKeydown}
         placeholder="Ask to edit code..."
         rows="2"
-        class="w-full px-2 py-1.5 text-[12px] bg-jb-bg border border-jb-border rounded resize-none text-jb-text placeholder:text-jb-muted focus:outline-none focus:border-jb-blue"
+        class="w-full px-3 py-2 text-[12px] bg-jb-bg border border-jb-border rounded resize-none text-jb-text placeholder:text-jb-muted focus:outline-none focus:border-jb-blue"
       ></textarea>
       <button
         title="Send message"
         onclick={sendMessage}
         disabled={!inputText.trim() || isStreaming}
-        class="absolute right-1.5 bottom-1.5 w-6 h-6 flex items-center justify-center rounded bg-jb-blue text-white border-none cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed hover:bg-jb-blue/80"
+        class="absolute right-2 bottom-4 w-6 h-6 flex items-center justify-center rounded bg-jb-blue text-white border-none cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed hover:bg-jb-blue/80"
       >
         <svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.5">
           <path d="M3 8h10M9 4l4 4-4 4" stroke-linecap="round" stroke-linejoin="round"/>

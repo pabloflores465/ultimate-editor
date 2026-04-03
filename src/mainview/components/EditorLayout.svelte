@@ -687,7 +687,7 @@
           <div class="border-t border-jb-border my-1"></div>
           <button
             class="w-full text-left px-3 py-1.5 text-[12px] text-jb-muted hover:bg-jb-select flex items-center gap-2"
-            onclick={() => { runConfigOpen = false; runEditOpen = true; }}
+            onclick={() => { runConfigOpen = false; runEditOpen = true; onUpdate({ activeBottom: "run", bottomPanelOpen: true }); }}
           >
             <svg viewBox="0 0 12 12" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M7 1v10M1 6h10"/></svg>
             Edit configurations...
@@ -1418,7 +1418,7 @@
               {#if runEditOpen}
                 <div class="flex-1 flex flex-col min-h-0 overflow-hidden bg-jb-bg z-50">
                   <div class="flex items-center gap-2 bg-jb-panel h-[26px] border-b border-jb-border flex-shrink-0 px-3 text-[11px] text-jb-muted">
-                    <svg viewBox="0 0 12 12" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 1v10M1 6h10"/></svg>
+                    <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.2" class="flex-shrink-0"><path d="M8 2v12M2 8h12"/></svg>
                     <span class="text-jb-text">Edit Run Configurations</span>
                     <button
                       onclick={() => runEditOpen = false}
